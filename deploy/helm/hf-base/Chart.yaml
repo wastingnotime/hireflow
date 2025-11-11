@@ -1,0 +1,5 @@
+apiVersion: v2
+name: hf-base
+type: library
+version: 0.1.0
+description: Shared helpers for HireFlow charts

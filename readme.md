@@ -242,3 +242,6 @@ kubectl -n hireflow create secret generic hireflow-connections \
   --from-literal=JwtSigningKey="dev_hmac_super_secret_change_me"
 ```
 
+## misc
+
+script to scaffold helm charts for new services: /scripts/new-chart.sh
