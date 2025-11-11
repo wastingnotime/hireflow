@@ -191,3 +191,54 @@ create namespace for HireFlow
 ```bash
 kubectl create ns hireflow
 ```
+
+
+### prepare minimum infra
+
+here the common services that will be shared by microservices
+
+```bash
+# SQL Server
+kubectl apply -f deploy/infra/mssql.yaml
+
+
+# RabbitMQ - how should it be
+# helm upgrade --install mq bitnami/rabbitmq -n hireflow \
+#   --set auth.username=hireflow --set auth.password=hireflowpass \
+
+# As confirmed by community reports (October 2025), Debian-based Bitnami images have been deprecated, but older Helm chart versions still reference them, causing ImagePullBackOff.
+
+
+# RabbitMQ - workaround
+helm upgrade --install mq bitnami/rabbitmq -n hireflow \
+  --set auth.username=hireflow \
+  --set auth.password=hireflowpass \
+  --set image.repository=bitnamilegacy/rabbitmq \
+  --set image.tag=4.1.3-debian-12-r1 \
+  --set global.security.allowInsecureImages=true
+
+
+# Redis (will be idle on M0)
+helm upgrade --install redis bitnami/redis -n hireflow \
+  --set architecture=standalone --set auth.enabled=false
+
+
+# Mongo
+helm upgrade --install mongo bitnami/mongodb -n hireflow \
+  --set architecture=replicaset --set auth.rootPassword=hireflowmongo
+```
+
+
+### secrets (passwords, connection-strings, etc)
+
+for now let's apply via console
+
+app secrets (one shared secret)
+```bash
+kubectl -n hireflow create secret generic hireflow-connections \
+  --from-literal=SqlServer="Server=mssql.hireflow.svc.cluster.local,1433;Database=hireflow;User ID=sa;Password=P@ssw0rd12345!;TrustServerCertificate=True" \
+  --from-literal=RabbitMQ="amqp://hireflow:hireflowpass@mq-rabbitmq.hireflow.svc.cluster.local:5672/" \
+  --from-literal=Mongo="mongodb://root:hireflowmongo@mongo-mongodb-0.mongo-mongodb-headless.hireflow.svc.cluster.local:27017/?replicaSet=rs0" \
+  --from-literal=JwtSigningKey="dev_hmac_super_secret_change_me"
+```
+

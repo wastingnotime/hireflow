@@ -1,0 +1,46 @@
+# mssql.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mssql-data
+  namespace: hireflow
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 10Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mssql
+  namespace: hireflow
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: mssql } }
+  template:
+    metadata: { labels: { app: mssql } }
+    spec:
+      containers:
+      - name: mssql
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        ports: [{ containerPort: 1433, name: tds }]
+        env:
+          - { name: ACCEPT_EULA, value: "Y" }
+          - { name: SA_PASSWORD, value: "P@ssw0rd12345!" }
+        volumeMounts:
+          - { name: data, mountPath: /var/opt/mssql }
+        readinessProbe:
+          tcpSocket: { port: 1433 }
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: mssql-data }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mssql
+  namespace: hireflow
+spec:
+  selector: { app: mssql }
+  ports: [{ name: tds, port: 1433, targetPort: 1433 }]
