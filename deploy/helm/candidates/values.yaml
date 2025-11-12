@@ -1,0 +1,31 @@
+image:
+  repository: hireflow/candidates
+  tag: local
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+fullnameOverride: candidates
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+env:
+  ASPNETCORE_URLS: "http://0.0.0.0:8080"
+
+secretRefName: "hireflow-connections"
+
+ingress:
+  enabled: false
+  className: nginx
+  host: hireflow.localtest.me
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "20m"
+  path: /
+  pathType: Prefix
+
+resources:
+  requests: { cpu: 100m, memory: 128Mi }
+  limits:   { cpu: 500m, memory: 512Mi }
