@@ -1,0 +1,10 @@
+apiVersion: v2
+name: applications
+description: HireFlow - Applications API
+type: application
+version: 0.1.0
+appVersion: "local"
+dependencies:
+  - name: hf-base
+    version: 0.1.0
+    repository: "file://../hf-base"
