@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hf.fullname" . }}
+  labels:
+    {{- include "hf.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "hf.labels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "hf.labels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: {{ include "hf.name" . }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        envFrom:
+          - secretRef:
+              name: {{ .Values.secretRefName }}
+        env:
+          {{- range $k, $v := .Values.env }}
+          - name: {{ $k }}
+            value: "{{ $v }}"
+          {{- end }}
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}

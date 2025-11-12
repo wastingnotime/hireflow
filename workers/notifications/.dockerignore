@@ -1,0 +1,20 @@
+# ide's
+.vscode
+.idea
+
+# env
+.env
+.env_example
+
+# docker
+.dockerignore
+dockerfile
+
+#git
+.git
+.github
+.gitignore
+
+#misc
+readme.md
+LICENSE
