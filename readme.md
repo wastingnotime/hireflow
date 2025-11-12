@@ -1,8 +1,10 @@
 # HireFlow
 
+
 ## overview
 
 A lightweight Applicant Tracking System where companies create job campaigns, publish openings, receive applications (incl. LinkedIn “apply” simulators), auto-screen, schedule interviews, and track funnel analytics.
+
 
 ### solution (draft)
 
@@ -71,6 +73,7 @@ flowchart LR
   REP -->|Aggregates| NOSQL
 ```
 
+
 ### technology candidates (draft)
 
 The candidates for implementation, for now, there is a great possibility of change. The list exists only as a roadmap.
@@ -116,7 +119,9 @@ This guide was only tested on Linux Mint 21.3, but it should work on any Debian 
 For the adventurous, just keep in mind that any kubernetes cluster should behave same way in any OS that it could be installed, and once we are using docker it is very probable that everything gonna be all right.
 Suggestion for the braves: if you think that makes sense, after taking note of your experience and ask us for a pull-request to include it here.
 
+
 ### pre-requirements
+
 
 #### install helm
 
@@ -137,8 +142,8 @@ including some well-know charts that we know we need in advance
 # Helm repos
 helm repo add bitnami https://charts.bitnami.com/bitnami
 helm repo update
-
 ```
+
 
 #### install Minikube
 
@@ -241,6 +246,160 @@ kubectl -n hireflow create secret generic hireflow-connections \
   --from-literal=Mongo="mongodb://root:hireflowmongo@mongo-mongodb-0.mongo-mongodb-headless.hireflow.svc.cluster.local:27017/?replicaSet=rs0" \
   --from-literal=JwtSigningKey="dev_hmac_super_secret_change_me"
 ```
+
+
+### application services
+
+build the services
+```bash
+# ensure using minikube's docker
+eval $(minikube docker-env)
+
+# build each app
+docker build -t hireflow/gateway:local ./services/gateway
+docker build -t hireflow/identity:local ./services/identity
+docker build -t hireflow/company-jobs:local ./services/company-jobs
+docker build -t hireflow/candidates:local ./services/candidates
+docker build -t hireflow/applications:local ./services/applications
+docker build -t hireflow/search:local ./services/search
+docker build -t hireflow/notifications:local ./workers/notifications
+```
+
+
+for the first time, before deploy services in the cluster, we need to run dep update in order of helm resolve the config inheritance we're using
+```bash
+helm dependency update deploy/helm/gateway
+helm dependency update deploy/helm/identity
+helm dependency update deploy/helm/company-jobs
+helm dependency update deploy/helm/candidates
+helm dependency update deploy/helm/applications
+helm dependency update deploy/helm/search
+helm dependency update deploy/helm/notifications
+```
+
+
+check if the charts are ok
+```bash
+helm lint deploy/helm/gateway
+helm lint deploy/helm/identity
+helm lint deploy/helm/company-jobs
+helm lint deploy/helm/candidates
+helm lint deploy/helm/applications
+helm lint deploy/helm/search
+helm lint deploy/helm/notifications
+```
+
+
+deploy the services
+```bash
+helm upgrade --install gateway       deploy/helm/gateway       -n hireflow
+helm upgrade --install identity      deploy/helm/identity      -n hireflow
+helm upgrade --install company-jobs  deploy/helm/company-jobs  -n hireflow
+helm upgrade --install candidates    deploy/helm/candidates    -n hireflow
+helm upgrade --install applications  deploy/helm/applications  -n hireflow
+helm upgrade --install search        deploy/helm/search        -n hireflow
+helm upgrade --install notifications deploy/helm/notifications -n hireflow
+```
+
+
+verify if all the pods
+```bash
+kubectl -n hireflow get pods
+```
+
+
+lets allow ingress receive api requests and calls
+```bash
+# get entry ip
+MINIIP=$(minikube ip)
+
+# create a new host name based on minikube ip
+HOST="hireflow.$(echo $MINIIP | tr . -).nip.io"
+
+# updates ingress to understand that host and forward accordingly
+kubectl -n hireflow patch ingress gateway \
+  --type='json' \
+  -p='[{"op":"replace","path":"/spec/rules/0/host","value":"'"$HOST"'"}]'
+```
+
+
+### api - smoke tests
+
+open a new shell
+```bash
+kubectl -n hireflow logs -l app.kubernetes.io/name=gateway -f
+```
+
+open another new shell
+```bash
+kubectl -n hireflow logs -l app.kubernetes.io/name=company-jobs -f
+```
+
+
+let's call our services and check if they are working
+```bash
+# call our health check endpoint
+curl -s http://$HOST/healthz
+
+# simulate creating a company via gateway → company-jobs
+curl -s -X POST http://$HOST/api/companies -H "Content-Type: application/json" \
+  -d '{"name":"Acme Inc."}'
+
+
+# simulate creating a job (just title & companyId)
+curl -s -X POST http://$HOST/api/jobs -H "Content-Type: application/json" \
+  -d '{"companyId":"111111-111111-111111-111111","title":"Senior Software Engineer"}'
+```
+
+we should see no errors on gateway and company-jobs services.
+
+
+### worker - smoke test
+
+in a new shell watch notifications pod logs
+```bash
+kubectl -n hireflow logs -l app.kubernetes.io/name=notifications -f
+```
+
+let's send a manual message for our notifications service
+```bash
+# port-forward allowing pod receives the message from host
+kubectl -n hireflow port-forward svc/mq-rabbitmq 15672:15672 5672:5672
+
+# sending
+curl -u hireflow:hireflowpass -H "content-type:application/json" -X POST -d'{"properties":{"delivery_mode":2},"routing_key":"notifications.commands","payload":"{\"type\":\"Test\",\"message\":\"hello-from-M0\"}","payload_encoding":"string"}' http://localhost:15672/api/exchanges/%2f/amq.default/publish
+```
+
+
+## troubleshooting
+
+for now just keeping some useful commands at hand
+
+check helm deploys
+```bash
+helm ls -n hireflow
+```
+
+check individual last status
+```bash
+helm status gateway -n hireflow
+```
+
+check if all the pods for hireflow are ok
+```bash
+kubectl -n hireflow get pods
+```
+
+check a specific pod
+```bash
+kubectl describe pod  gateway-68fc54c6fc-w874c -n hireflow
+```
+
+check logs of a specif application (label)
+```bash
+kubectl -n hireflow logs -l app.kubernetes.io/name=notifications
+```
+
 
 ## misc
 
