@@ -1,0 +1,27 @@
+apiVersion: v2
+name: hireflow
+type: application
+version: 0.1.0
+description: HireFlow umbrella chart (dev)
+dependencies:
+  - name: gateway
+    version: 0.1.0
+    repository: "file://../gateway"
+  - name: identity
+    version: 0.1.0
+    repository: "file://../identity"
+  - name: company-jobs
+    version: 0.1.0
+    repository: "file://../company-jobs"
+  - name: candidates
+    version: 0.1.0
+    repository: "file://../candidates"
+  - name: applications
+    version: 0.1.0
+    repository: "file://../applications"
+  - name: search
+    version: 0.1.0
+    repository: "file://../search"
+  - name: notifications
+    version: 0.1.0
+    repository: "file://../notifications"

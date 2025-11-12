@@ -1,0 +1,15 @@
+# You can override per-subchart here if needed, e.g.:
+gateway:
+  image:
+    repository: hireflow/gateway
+    tag: local
+  ingress:
+    enabled: true
+    host: hireflow.localtest.me
+
+identity.image.tag: local
+company-jobs.image.tag: local
+candidates.image.tag: local
+applications.image.tag: local
+search.image.tag: local
+notifications.image.tag: local
