@@ -1,0 +1,18 @@
+image:
+  repository: hireflow/notifications
+  tag: local
+  pullPolicy: IfNotPresent
+
+replicaCount: 1   # KEDA later can set to 0..N
+
+fullnameOverride: notifications
+
+env:
+  # e.g., OTEL vars if you add later
+  WORKER_QUEUE: "notifications.commands"
+
+secretRefName: "hireflow-connections"
+
+resources:
+  requests: { cpu: 50m, memory: 64Mi }
+  limits:   { cpu: 500m, memory: 256Mi }
