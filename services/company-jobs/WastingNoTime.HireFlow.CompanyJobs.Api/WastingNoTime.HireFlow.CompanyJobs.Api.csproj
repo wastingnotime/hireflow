@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.11" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.11" />
+        <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="9.0.11" />
+        <PackageReference Include="Swashbuckle.AspNetCore" Version="9.0.6" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <_ContentIncludedByDefault Remove="WastingNoTime.HireFlow.CompanyJobs.Migrator\obj\project.assets.json" />
+      <_ContentIncludedByDefault Remove="WastingNoTime.HireFlow.CompanyJobs.Migrator\obj\project.packagespec.json" />
+      <_ContentIncludedByDefault Remove="WastingNoTime.HireFlow.CompanyJobs.Migrator\obj\WastingNoTime.HireFlow.CompanyJobs.Migrator.csproj.nuget.dgspec.json" />
+      <_ContentIncludedByDefault Remove="WastingNoTime.HireFlow.CompanyJobs.Migrator\obj\WastingNoTime.HireFlow.Migrator.csproj.nuget.dgspec.json" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\WastingNoTime.HireFlow.CompanyJobs.Data\WastingNoTime.HireFlow.CompanyJobs.Data.csproj" />
+    </ItemGroup>
+
+</Project>

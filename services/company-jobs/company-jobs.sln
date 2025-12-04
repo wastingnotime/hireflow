@@ -1,6 +1,10 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WastingNoTime.HireFlow.CompanyJobs", "WastingNoTime.HireFlow.CompanyJobs.csproj", "{F2F0484A-B6BB-48AE-9B21-8DAEAB980053}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WastingNoTime.HireFlow.CompanyJobs.Api", "WastingNoTime.HireFlow.CompanyJobs.Api\WastingNoTime.HireFlow.CompanyJobs.Api.csproj", "{F2F0484A-B6BB-48AE-9B21-8DAEAB980053}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WastingNoTime.HireFlow.CompanyJobs.Migrator", "WastingNoTime.HireFlow.CompanyJobs.Migrator\WastingNoTime.HireFlow.CompanyJobs.Migrator.csproj", "{0C80B224-095D-475C-AD23-4599EEE6DE2A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WastingNoTime.HireFlow.CompanyJobs.Data", "WastingNoTime.HireFlow.CompanyJobs.Data\WastingNoTime.HireFlow.CompanyJobs.Data.csproj", "{9DBEF954-3A7A-4129-87FF-A8422D27B17F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -12,5 +16,13 @@ Global
 		{F2F0484A-B6BB-48AE-9B21-8DAEAB980053}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F2F0484A-B6BB-48AE-9B21-8DAEAB980053}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F2F0484A-B6BB-48AE-9B21-8DAEAB980053}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0C80B224-095D-475C-AD23-4599EEE6DE2A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0C80B224-095D-475C-AD23-4599EEE6DE2A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0C80B224-095D-475C-AD23-4599EEE6DE2A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0C80B224-095D-475C-AD23-4599EEE6DE2A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9DBEF954-3A7A-4129-87FF-A8422D27B17F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9DBEF954-3A7A-4129-87FF-A8422D27B17F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9DBEF954-3A7A-4129-87FF-A8422D27B17F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9DBEF954-3A7A-4129-87FF-A8422D27B17F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
