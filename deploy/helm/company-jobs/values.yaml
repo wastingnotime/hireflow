@@ -3,6 +3,16 @@ image:
   tag: local
   pullPolicy: IfNotPresent
 
+# NEW: migrator image (separate from API)
+migrator:
+  image:
+    repository: hireflow/company-jobs-migrator
+    tag: local
+    pullPolicy: IfNotPresent
+
+db:
+  connectionStringKey: SqlServer   # <-- reuse existing key for now
+
 replicaCount: 1
 
 fullnameOverride: company-jobs
