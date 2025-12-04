@@ -67,9 +67,8 @@ echo "Job created: $JOB_ID"
 
 # 4) Publish Job
 JOB_PUB_JSON=$(
-  curl -sS -X POST "$BASE_URL/jobs/$JOB_ID/publish" \
-    "${HEADERS[@]}" \
-    -d '{}'
+  curl -sS -X PATCH "$BASE_URL/jobs/$JOB_ID/publish" \
+    "${HEADERS[@]}" 
 )
 
 echo "Job published: $(echo "$JOB_PUB_JSON" | jq -r '.status')"
