@@ -29,6 +29,11 @@ spec:
           - name: {{ $k }}
             value: "{{ $v }}"
           {{- end }}
+          - name: COMPANYJOBS_CONNECTION_STRING
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.secretRefName }}
+                key: {{ .Values.db.connectionStringKey | default "SqlServer" }}
         readinessProbe:
           httpGet:
             path: /healthz
