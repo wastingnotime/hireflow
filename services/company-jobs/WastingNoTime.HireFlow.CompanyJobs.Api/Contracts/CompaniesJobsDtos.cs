@@ -1,6 +1,5 @@
 namespace WastingNoTime.HireFlow.CompanyJobs.Api.Contracts;
 
-
 // ----- Companies -----
 
 public sealed record CompanyCreateRequest(
@@ -14,18 +13,32 @@ public sealed record CompanyResponse(
     string? Domain
 );
 
+// ----- Recruiters -----
+
+public sealed record RecruiterCreateRequest(
+    string Name,
+    string Email
+);
+
+public sealed record RecruiterResponse(
+    long Id,
+    long CompanyId,
+    string Name,
+    string Email
+);
 
 // ----- Jobs -----
 
 public sealed record JobCreateRequest(
     long CompanyId,
-    string Title
-    // later: description, requirements, etc.
+    string Title,
+    long? RecruiterId    // optional in M1
 );
 
 public sealed record JobResponse(
     long Id,
     long CompanyId,
     string Title,
-    string Status
+    string Status,
+    long? RecruiterId
 );

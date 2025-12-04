@@ -32,28 +32,28 @@ COMPANY_ID=$(echo "$COMPANY_JSON" | jq -r '.id')
 echo "Company created: $COMPANY_ID"
 
 # 2) Create Recruiter (linked to company)
-RECRUITER_PAYLOAD=$(jq -nc --arg cid "$COMPANY_ID" '{
+RECRUITER_PAYLOAD='{
   "name": "Henrique Riccio",
-  "email": "henrique@wastingnotime.org",
-  "company_id": $cid
-}')
+  "email": "henrique@wastingnotime.org"
+}'
 
 RECRUITER_JSON=$(
-  curl -sS -X POST "$BASE_URL/recruiters" \
-    "${HEADERS[@]}" \
-    -d "$RECRUITER_PAYLOAD"
+  curl -sS -X POST "$BASE_URL/companies/$COMPANY_ID/recruiters" \
+   "${HEADERS[@]}" \
+   -d "$RECRUITER_PAYLOAD"
 )
 
 RECRUITER_ID=$(echo "$RECRUITER_JSON" | jq -r '.id')
 echo "Recruiter created: $RECRUITER_ID"
 
 # 3) Create Job (draft)
-JOB_PAYLOAD=$(jq -nc --arg cid "$COMPANY_ID" '{
+JOB_PAYLOAD=$(jq -nc --arg cid "$COMPANY_ID" --arg rid "$RECRUITER_ID" '{
   "company_id": $cid,
   "title": "Senior Backend Engineer (Go/.NET)",
   "description": "Own critical services, distributed systems, reliability.",
   "requirements": ["Go", ".NET", "PostgreSQL", "K8s"],
-  "status": "draft"
+  "status": "draft",
+  "recruiter_id": $rid,
 }')
 
 JOB_JSON=$(
@@ -63,7 +63,7 @@ JOB_JSON=$(
 )
 
 JOB_ID=$(echo "$JOB_JSON" | jq -r '.id')
-echo "Job created (draft): $JOB_ID"
+echo "Job created: $JOB_ID"
 
 # 4) Publish Job
 JOB_PUB_JSON=$(
@@ -73,4 +73,3 @@ JOB_PUB_JSON=$(
 )
 
 echo "Job published: $(echo "$JOB_PUB_JSON" | jq -r '.status')"
-

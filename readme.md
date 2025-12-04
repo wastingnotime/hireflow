@@ -227,7 +227,7 @@ build and deploy the services
 # build each app
 make build
 
-# build update helm definitions (company has changed)
+# build update helm definitions (chart of company has changed)
 make helm-update
 
 # deploy them on the cluster
@@ -238,13 +238,12 @@ make ingress-patch
 ```
 
 
-
 verify if all the pods
 ```bash
 kubectl -n hireflow get pods
 ```
 
-
+test
 ```bash
 make test-happy-path
 ```
@@ -270,13 +269,6 @@ dotnet ef migrations add InitialCreate \
   --startup-project services/company-jobs/WastingNoTime.HireFlow.CompanyJobs.Migrator
 ```
 
-update company-jobs
-```
-kubectl delete job company-jobs-migrate -n hireflow --ignore-not-found
-helm upgrade --install company-jobs deploy/helm/company-jobs -n hireflow
-kubectl logs job/company-jobs-migrate -n hireflow
-```
-
 check database
 ```
 kubectl -n hireflow exec -it deploy/mssql -- bash
@@ -297,24 +289,14 @@ SELECT Id, CompanyId, Title, Status FROM companyjobs.jobs;
 GO
 ```
 
-quick test
+second migration
 ```
-# create company
-curl -sS -X POST http://hireflow.localtest.me/companies \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Wasting No Time Ltd.","domain":"wastingnotime.org"}' | jq
-
-# create job (draft)
-curl -sS -X POST http://hireflow.localtest.me/jobs \
-  -H "Content-Type: application/json" \
-  -d '{"companyId":1,"title":"Senior Backend Engineer (Go/.NET)"}' | jq
-
-# publish job
-curl -sS -X PATCH http://hireflow.localtest.me/jobs/1/publish | jq
-
-# get job
-curl -sS http://hireflow.localtest.me/jobs/1 | jq
+make migrations-add NAME=AddRecruiters COMPANYJOBS_CONNECTION_STRING='Server=mssql.hireflow.svc.cluster.local,1433;Database=hireflow;User ID=sa;Password=P@ssw0rd12345!;TrustServerCertificate=True'
 ```
+
+
+quick test -> a lot of targets on make file, or run the full test
+
 
 
 

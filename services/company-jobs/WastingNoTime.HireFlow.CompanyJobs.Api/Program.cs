@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.HttpLogging;
 using Microsoft.EntityFrameworkCore;
 using WastingNoTime.HireFlow.CompanyJobs.Api.Endpoints;
 using WastingNoTime.HireFlow.CompanyJobs.Data;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 var configuration = builder.Configuration;
@@ -15,12 +16,14 @@ var cs =
     throw new InvalidOperationException("Missing DB connection string for CompanyJobs");
 
 
-
 builder.Services.AddDbContext<CompanyJobsDbContext>(opt =>
-    opt.UseSqlServer(cs, sql =>
-    {
-        sql.MigrationsHistoryTable("__EFMigrationsHistory", "companyjobs");
-    }));
+    opt.UseSqlServer(cs, sql => { sql.MigrationsHistoryTable("__EFMigrationsHistory", "companyjobs"); }));
+
+
+builder.Services.ConfigureHttpJsonOptions(opt =>
+{
+    opt.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
+});
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -50,11 +53,3 @@ app.MapGet("/healthz", () => Results.Ok(new { status = "ok", svc = app.Environme
 app.MapCompanyJobsEndpoints();
 
 app.Run();
-
-
-
-
-
-
-
-
