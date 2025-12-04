@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using WastingNoTime.HireFlow.CompanyJobs.Data;
 
@@ -10,9 +11,11 @@ using WastingNoTime.HireFlow.CompanyJobs.Data;
 namespace WastingNoTime.HireFlow.CompanyJobs.Data.Migrations
 {
     [DbContext(typeof(CompanyJobsDbContext))]
-    partial class CompanyJobsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251204211452_AddRecruiters")]
+    partial class AddRecruiters
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

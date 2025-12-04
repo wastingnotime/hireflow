@@ -3,7 +3,8 @@
 # ---------- Config ----------
 REGISTRY        ?= hireflow
 NAMESPACE       ?= hireflow
-IMAGE_TAG       ?= local
+IMAGE_TAG 		?= $(shell git rev-parse --short HEAD)
+
 
 IMAGE_GATEWAY_API       	 := $(REGISTRY)/gateway:$(IMAGE_TAG)
 IMAGE_COMPANY_JOBS_API       := $(REGISTRY)/company-jobs:$(IMAGE_TAG)
@@ -126,10 +127,14 @@ RELEASE_GATEWAY := gateway
 helm-deploy: helm-deploy-gateway helm-deploy-company-jobs
 
 helm-deploy-gateway:
-	helm upgrade --install $(RELEASE_GATEWAY) $(CHART_GATEWAY) -n $(NAMESPACE)
+	@$(MINIKUBE_DOCKER_ENV) && \
+	helm upgrade --install $(RELEASE_GATEWAY) $(CHART_GATEWAY) -n $(NAMESPACE) \
+		--set image.tag=${IMAGE_TAG}
 
 helm-deploy-company-jobs:
-	helm upgrade --install $(RELEASE_COMPANY_JOBS) $(CHART_COMPANY_JOBS) -n $(NAMESPACE)
+	@$(MINIKUBE_DOCKER_ENV) && \
+	helm upgrade --install $(RELEASE_COMPANY_JOBS) $(CHART_COMPANY_JOBS) -n $(NAMESPACE) \
+		--set image.tag=${IMAGE_TAG}
 
 helm-update: helm-update-gateway helm-update-company-jobs
 
@@ -168,24 +173,42 @@ helm-status-gateway:
 
 JOB_ID ?=1
 COMPANY_ID ?=1
+#RECRUITER_ID ?=1
 
-.PHONY: api-healthz, api-company-create, api-job-create, api-job-publish, api-job-get
+.PHONY: api-healthz \
+	api-jobs-create api-jobs-publish api-jobs-get \
+	api-companies-create api-companies-get api-companies-get-all \
+	api-recruiters-get-all api-recruiters-create
 
 api-healthz:
 	curl -s $(GATEWAY_URL)/healthz | jq
 
-api-company-create:
+api-companies-create:
 	curl -sS -X POST $(GATEWAY_URL)/companies \
 		-H "Content-Type: application/json" \
 		-d '{"name":"Wasting No Time Ltd.","domain":"wastingnotime.org"}' | jq
 
-api-job-create:
+api-jobs-create:
 	curl -sS -X POST $(GATEWAY_URL)/jobs \
 		-H "Content-Type: application/json" \
-		-d '{"companyId":$(COMPANY_ID),"title":"Senior Backend Engineer (Go/.NET)"}' | jq
+		-d '{"companyId":$(COMPANY_ID),"title":"Senior Backend Engineer (Go/.NET)","recruiterId":$(RECRUITER_ID)}' | jq
 
-api-job-publish:
+api-jobs-publish:
 	curl -sS -X PATCH $(GATEWAY_URL)/jobs/$(JOB_ID)/publish | jq
 
-api-job-get:
+api-jobs-get:
 	curl -sS $(GATEWAY_URL)/jobs/$(JOB_ID) | jq
+
+api-companies-get:
+	curl -sS $(GATEWAY_URL)/companies/$(COMPANY_ID) | jq
+
+api-companies-get-all:
+	curl -sS $(GATEWAY_URL)/companies | jq
+
+api-recruiters-get-all:
+	curl -sS $(GATEWAY_URL)/companies/$(COMPANY_ID)/recruiters | jq
+
+api-recruiters-create:
+	curl -sS -X POST $(GATEWAY_URL)/companies/$(COMPANY_ID)/recruiters \
+		-H "Content-Type: application/json" \
+		-d '{"companyId":$(COMPANY_ID),"name": "Henrique Riccio", "email":"hriccio@wastingnotime.org"}' | jq
