@@ -1,0 +1,191 @@
+# Makefile for Hireflow / company-jobs
+
+# ---------- Config ----------
+REGISTRY        ?= hireflow
+NAMESPACE       ?= hireflow
+IMAGE_TAG       ?= local
+
+IMAGE_GATEWAY_API       	 := $(REGISTRY)/gateway:$(IMAGE_TAG)
+IMAGE_COMPANY_JOBS_API       := $(REGISTRY)/company-jobs:$(IMAGE_TAG)
+IMAGE_COMPANY_JOBS_MIGRATOR  := $(REGISTRY)/company-jobs-migrator:$(IMAGE_TAG)
+
+CHART_COMPANY_JOBS := deploy/helm/company-jobs
+CHART_GATEWAY := deploy/helm/gateway
+
+# Gateway base URL (through which we hit the happy path)
+MINIIP := $(shell minikube ip)
+HOST := hireflow.$(shell printf "%s" "$(MINIIP)" | tr . -).nip.io
+GATEWAY_URL ?= http://$(HOST)
+
+# Path to the happy path script (from earlier)
+HAPPY_PATH_SCRIPT ?= scripts/happy-path.sh
+RESUME_PATH       ?= ./sample-resume.pdf
+
+# ---------- Phony targets ----------
+.PHONY: build build-ensure build-gateway build-company-jobs-api build-company-jobs-migrator \
+        logs-company-jobs \
+		logs-gateway \
+		ingress-patch \
+        test-happy-path
+
+# ---------- Build ----------
+MINIKUBE_DOCKER_ENV := eval "$$(minikube docker-env)"
+
+build: build-gateway build-company-jobs-api build-company-jobs-migrator ## Build all images
+
+build-gateway:
+	@$(MINIKUBE_DOCKER_ENV) && \
+	docker build \
+	  -t $(IMAGE_GATEWAY_API) \
+	  ./services/gateway
+
+build-company-jobs-api:
+	@$(MINIKUBE_DOCKER_ENV) && \
+	docker build \
+	  -t $(IMAGE_COMPANY_JOBS_API) \
+	  ./services/company-jobs
+
+build-company-jobs-migrator:
+	@$(MINIKUBE_DOCKER_ENV) && \
+	docker build \
+	  -f ./services/company-jobs/Dockerfile.migrator \
+	  -t $(IMAGE_COMPANY_JOBS_MIGRATOR) \
+	  ./services/company-jobs
+
+
+# ---------- Debug helpers ----------
+
+logs-company-jobs: ## Tail logs of company-jobs pods
+	kubectl logs -n $(NAMESPACE) -l app.kubernetes.io/name=company-jobs -f --tail=200
+
+logs-gateway: ## Tail logs of gateway pods
+	kubectl logs -n $(NAMESPACE) -l app.kubernetes.io/name=gateway -f --tail=200
+
+# ---------- Milestone 1: Happy Path ----------
+
+ingress-patch: ## updates ingress to understand that host and forward accordingly
+	kubectl -n hireflow patch ingress gateway \
+	--type='json' \
+	-p='[{"op":"replace","path":"/spec/rules/0/host","value":"'$(HOST)'"}]'
+
+test-happy-path: ## Run Milestone 1 happy path through the gateway
+	@test -x $(HAPPY_PATH_SCRIPT) || { echo "Missing or not executable: $(HAPPY_PATH_SCRIPT)"; exit 1; }
+	BASE_URL=$(GATEWAY_URL) RESUME_PATH=$(RESUME_PATH) bash $(HAPPY_PATH_SCRIPT)
+
+# -------------------------------------------
+# EF Core Migrations
+# -------------------------------------------
+
+MIGRATIONS_PROJECT := services/company-jobs/WastingNoTime.HireFlow.CompanyJobs.Data
+MIGRATIONS_STARTUP := services/company-jobs/WastingNoTime.HireFlow.CompanyJobs.Migrator
+
+.PHONY: migrations migrations-add migrations-list migrations-remove
+
+## Create a new migration:
+##   make migrations-add NAME=InitialCreate
+migrations-add:
+	@if [ -z "$(NAME)" ]; then \
+		echo "ERROR: Missing migration NAME. Usage:"; \
+		echo "  make migrations-add NAME=AddJobsTable"; \
+		exit 1; \
+	fi
+	@echo "🔧 Adding migration '$(NAME)'..."
+	dotnet ef migrations add $(NAME) \
+		--project $(MIGRATIONS_PROJECT) \
+		--startup-project $(MIGRATIONS_STARTUP)
+	@echo "✅ Migration added: $(NAME)"
+
+## Remove the last migration
+migrations-remove:
+	@echo "🛠 Removing last migration..."
+	dotnet ef migrations remove \
+		--project $(MIGRATIONS_PROJECT) \
+		--startup-project $(MIGRATIONS_STARTUP)
+	@echo "✅ Last migration removed"
+
+## List pending and applied migrations
+migrations-list:
+	@echo "📋 Listing migrations..."
+	dotnet ef migrations list \
+		--project $(MIGRATIONS_PROJECT) \
+		--startup-project $(MIGRATIONS_STARTUP)
+
+
+
+# -------------------------------------------
+# Helm
+# -------------------------------------------
+
+RELEASE_COMPANY_JOBS := company-jobs
+RELEASE_GATEWAY := gateway
+
+.PHONY: helm-deploy-company-jobs helm-deploy-gateway \
+	helm-uninstall-company-jobs helm-uninstall-gateway \
+	helm-status-company-jobs helm-status-gateway
+
+helm-deploy: helm-deploy-gateway helm-deploy-company-jobs
+
+helm-deploy-gateway:
+	helm upgrade --install $(RELEASE_GATEWAY) $(CHART_GATEWAY) -n $(NAMESPACE)
+
+helm-deploy-company-jobs:
+	helm upgrade --install $(RELEASE_COMPANY_JOBS) $(CHART_COMPANY_JOBS) -n $(NAMESPACE)
+
+helm-update: helm-update-gateway helm-update-company-jobs
+
+helm-update-gateway:
+	helm dependency update $(CHART_GATEWAY) -n $(NAMESPACE)
+
+helm-update-company-jobs:
+	helm dependency update $(CHART_COMPANY_JOBS) -n $(NAMESPACE)
+
+helm-uninstall: helm-uninstall-gateway helm-uninstall-company-jobs
+
+helm-uninstall-gateway:
+	helm uninstall $(RELEASE_GATEWAY) -n $(NAMESPACE) || true
+
+helm-uninstall-company-jobs:
+	helm uninstall $(RELEASE_COMPANY_JOBS) -n $(NAMESPACE) || true
+
+helm-status-company-jobs:
+	@echo "🔎 Helm release:"
+	@helm status $(RELEASE_COMPANY_JOBS) -n $(NAMESPACE) || echo "No Helm release found"
+	@echo
+	@echo "🔎 Pods:"
+	@kubectl get pods -n $(NAMESPACE) -l app.kubernetes.io/name=company-jobs || true
+
+helm-status-gateway:
+	@echo "🔎 Helm release:"
+	@helm status $(RELEASE_GATEWAY) -n $(NAMESPACE) || echo "No Helm release found"
+	@echo
+	@echo "🔎 Pods:"
+	@kubectl get pods -n $(NAMESPACE) -l app.kubernetes.io/name=gateway || true
+
+
+# -------------------------------------------
+# curl: quick calls
+# -------------------------------------------
+
+JOB_ID ?=1
+COMPANY_ID ?=1
+
+.PHONY: api-healthz, api-company-create, api-job-create, api-job-publish, api-job-get
+
+api-healthz:
+	curl -s $(GATEWAY_URL)/healthz | jq
+
+api-company-create:
+	curl -sS -X POST $(GATEWAY_URL)/companies \
+		-H "Content-Type: application/json" \
+		-d '{"name":"Wasting No Time Ltd.","domain":"wastingnotime.org"}' | jq
+
+api-job-create:
+	curl -sS -X POST $(GATEWAY_URL)/jobs \
+		-H "Content-Type: application/json" \
+		-d '{"companyId":$(COMPANY_ID),"title":"Senior Backend Engineer (Go/.NET)"}' | jq
+
+api-job-publish:
+	curl -sS -X PATCH $(GATEWAY_URL)/jobs/$(JOB_ID)/publish | jq
+
+api-job-get:
+	curl -sS $(GATEWAY_URL)/jobs/$(JOB_ID) | jq
