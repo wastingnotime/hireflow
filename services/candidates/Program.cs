@@ -198,6 +198,122 @@ app.MapPost("/applications/{id}/screen", async (
     return Results.Ok(response);
 });
 
+
+// POST /applications/{id}/interviews : schedule interview + move application to "interview"
+app.MapPost("/applications/{id}/interviews", async (
+    string id,
+    ScheduleInterviewRequest req,
+    CandidatesDb db,
+    CancellationToken ct) =>
+{
+    // 1) Load application
+    var appFilter = Builders<Application>.Filter.Eq(x => x.Id, id);
+    var appDoc = await db.Applications.Find(appFilter).FirstOrDefaultAsync(ct);
+
+    if (appDoc is null)
+        return Results.NotFound(new { error = "Application not found." });
+
+    // 2) Create interview document
+    var now = DateTime.UtcNow;
+
+    var interview = new Interview
+    {
+        ApplicationId = appDoc.Id,
+        JobId = appDoc.JobId,
+        CandidateName = appDoc.CandidateName,
+        CandidateEmail = appDoc.CandidateEmail,
+        ScheduledAtUtc = req.ScheduledAtUtc,
+        DurationMinutes = req.DurationMinutes <= 0 ? 60 : req.DurationMinutes,
+        Location = string.IsNullOrWhiteSpace(req.Location) ? "Online" : req.Location,
+        Status = "scheduled",
+        CreatedAtUtc = now
+    };
+
+    await db.Interviews.InsertOneAsync(interview, cancellationToken: ct);
+
+    // 3) Move application status to "interview"
+    appDoc.Status = "interview";
+    await db.Applications.ReplaceOneAsync(
+        Builders<Application>.Filter.Eq(x => x.Id, appDoc.Id),
+        appDoc,
+        cancellationToken: ct
+    );
+
+    var response = new InterviewResponse(
+        interview.Id,
+        interview.ApplicationId,
+        interview.JobId,
+        interview.CandidateName,
+        interview.CandidateEmail,
+        interview.ScheduledAtUtc,
+        interview.DurationMinutes,
+        interview.Location,
+        interview.Status,
+        interview.CreatedAtUtc
+    );
+
+    return Results.Created($"/interviews/{interview.Id}", response);
+});
+
+// GET /applications/{id}/interviews : list interviews for this application
+app.MapGet("/applications/{id}/interviews", async (
+    string id,
+    CandidatesDb db,
+    CancellationToken ct) =>
+{
+    var filter = Builders<Interview>.Filter.Eq(x => x.ApplicationId, id);
+
+    var interviews = await db.Interviews
+        .Find(filter)
+        .SortBy(x => x.ScheduledAtUtc)
+        .ToListAsync(ct);
+
+    var response = interviews
+        .Select(i => new InterviewResponse(
+            i.Id,
+            i.ApplicationId,
+            i.JobId,
+            i.CandidateName,
+            i.CandidateEmail,
+            i.ScheduledAtUtc,
+            i.DurationMinutes,
+            i.Location,
+            i.Status,
+            i.CreatedAtUtc
+        ))
+        .ToList();
+
+    return Results.Ok(response);
+});
+
+// GET /interviews/{id} : get a single interview
+app.MapGet("/interviews/{id}", async (
+    string id,
+    CandidatesDb db,
+    CancellationToken ct) =>
+{
+    var filter = Builders<Interview>.Filter.Eq(x => x.Id, id);
+    var interview = await db.Interviews.Find(filter).FirstOrDefaultAsync(ct);
+
+    if (interview is null)
+        return Results.NotFound();
+
+    var response = new InterviewResponse(
+        interview.Id,
+        interview.ApplicationId,
+        interview.JobId,
+        interview.CandidateName,
+        interview.CandidateEmail,
+        interview.ScheduledAtUtc,
+        interview.DurationMinutes,
+        interview.Location,
+        interview.Status,
+        interview.CreatedAtUtc
+    );
+
+    return Results.Ok(response);
+});
+
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok", svc = app.Environment.ApplicationName }));
 
 app.Run();

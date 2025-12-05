@@ -93,3 +93,30 @@ SCREENED_JSON=$(
 echo
 echo "Applicatoin screened:"
 echo "$SCREENED_JSON" | jq
+
+
+# 6) Schedule interview
+
+# a slot in the future (example: now + 2 days at 15:00 UTC)
+SCHEDULE_TIME=$(date -u -d "+2 days 15:00" +"%Y-%m-%dT%H:%M:%SZ")
+
+INTERVIEW_PAYLOAD=$(jq -nc --arg schedule_time "$SCHEDULE_TIME" '{
+  "scheduledAtUtc": $schedule_time,
+  "durationMinutes": 60,
+  "location": "Google Meet"
+}')
+
+
+#echo $INTERVIEW_PAYLOAD
+
+#exit
+
+INTERVIEW_JSON=$(
+  curl -sS -X POST "$BASE_URL/applications/$APPLICATION_ID/interviews" \
+    "${HEADERS[@]}" \
+    -d "$INTERVIEW_PAYLOAD"
+)
+
+echo "Interview scheduled:"
+echo "$INTERVIEW_JSON" | jq
+INTERVIEW_ID=$(echo "$INTERVIEW_JSON" | jq -r '.id')
