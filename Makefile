@@ -26,7 +26,7 @@ RESUME_PATH       ?= ./misc/sample-resume.pdf
 
 # ---------- Phony targets ----------
 .PHONY: build build-ensure build-gateway build-company-jobs-api build-company-jobs-migrator build-candidates-api \
-        logs-company-jobs logs-gateway logs-candidates \
+        logs-company-jobs logs-gateway logs-candidates logs-notifications \
 		ingress-patch \
         test-happy-path
 
@@ -71,6 +71,11 @@ logs-gateway: ## Tail logs of gateway pods
 
 logs-candidates: ## Tail logs of candidates pods
 	kubectl logs -n $(NAMESPACE) -l app.kubernetes.io/name=candidates -f --tail=200
+
+logs-notifications:
+	kubectl logs -n $(NAMESPACE) -l app.kubernetes.io/name=notifications -f --tail=200
+#kubectl n $(NAMESPACE) exec -it deploy/notification -- bash
+
 
 # ---------- Milestone 1: Happy Path ----------
 
