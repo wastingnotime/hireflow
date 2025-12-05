@@ -83,4 +83,13 @@ APPLICATION_JSON=$(
     -F "resume=@${RESUME_PATH};type=application/pdf"
 )
 
-echo "$APPLICATION_JSON" | jq
+APPLICATION_ID=$(echo "$APPLICATION_JSON" | jq -r '.id')
+echo "Application created: $APPLICATION_ID"
+
+SCREENED_JSON=$(
+  curl -sS -X POST "$BASE_URL/applications/$APPLICATION_ID/screen"
+)
+
+echo
+echo "Applicatoin screened:"
+echo "$SCREENED_JSON" | jq

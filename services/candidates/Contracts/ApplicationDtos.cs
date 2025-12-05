@@ -7,5 +7,8 @@ public sealed record ApplicationResponse(
     string CandidateEmail,
     string Status,
     string ResumePath,
-    DateTime CreatedAtUtc
+    DateTime CreatedAtUtc,
+    int? ScreeningScore,
+    DateTime? ScreenedAtUtc,
+    string? ScreeningNotes
 );

@@ -108,7 +108,10 @@ app.MapPost("/applications", async (
         appDoc.CandidateEmail,
         appDoc.Status,
         appDoc.ResumePath,
-        appDoc.CreatedAtUtc
+        appDoc.CreatedAtUtc,
+        appDoc.ScreeningScore,
+        appDoc.ScreenedAtUtc,
+        appDoc.ScreeningNotes
     );
 
     return Results.Created($"/applications/{appDoc.Id}", response);
@@ -130,7 +133,66 @@ app.MapGet("/applications/{id}", async (string id, CandidatesDb db, Cancellation
         appDoc.CandidateEmail,
         appDoc.Status,
         appDoc.ResumePath,
-        appDoc.CreatedAtUtc
+        appDoc.CreatedAtUtc,
+        appDoc.ScreeningScore,
+        appDoc.ScreenedAtUtc,
+        appDoc.ScreeningNotes
+    );
+
+    return Results.Ok(response);
+});
+
+// POST /applications/{id}/screen : simple screening step (M1)
+app.MapPost("/applications/{id}/screen", async (
+    string id,
+    CandidatesDb db,
+    CancellationToken ct) =>
+{
+    var filter = Builders<Application>.Filter.Eq(x => x.Id, id);
+    var appDoc = await db.Applications.Find(filter).FirstOrDefaultAsync(ct);
+
+    if (appDoc is null)
+        return Results.NotFound(new { error = "Application not found." });
+
+    // --- Simple heuristic for now ---
+    // This is deliberately dumb and deterministic:
+    // - base score 50
+    // - +10 if email contains "senior"
+    // - +10 if name length > 10
+    var score = 50;
+
+    if (appDoc.CandidateEmail.Contains("senior", StringComparison.OrdinalIgnoreCase))
+        score += 10;
+
+    if (!string.IsNullOrWhiteSpace(appDoc.CandidateName) &&
+        appDoc.CandidateName.Length > 10)
+        score += 10;
+
+    // Cap between 0 and 100
+    score = Math.Clamp(score, 0, 100);
+
+    appDoc.ScreeningScore = score;
+    appDoc.ScreenedAtUtc = DateTime.UtcNow;
+    appDoc.ScreeningNotes = "Simple heuristic screening (M1 stub)";
+    appDoc.Status = "screened";
+
+    await db.Applications.ReplaceOneAsync(
+        Builders<Application>.Filter.Eq(x => x.Id, appDoc.Id),
+        appDoc,
+        cancellationToken: ct
+    );
+
+    var response = new ApplicationResponse(
+        appDoc.Id,
+        appDoc.JobId,
+        appDoc.CandidateName,
+        appDoc.CandidateEmail,
+        appDoc.Status,
+        appDoc.ResumePath,
+        appDoc.CreatedAtUtc,
+        appDoc.ScreeningScore,
+        appDoc.ScreenedAtUtc,
+        appDoc.ScreeningNotes
     );
 
     return Results.Ok(response);
