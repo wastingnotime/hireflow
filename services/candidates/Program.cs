@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.HttpLogging;
 using MongoDB.Driver;
 using WastingNoTime.HireFlow.Candidates.Api.Contracts;
 using WastingNoTime.HireFlow.Candidates.Api.Data;
+using WastingNoTime.HireFlow.Candidates.Api.Messaging;
 using WastingNoTime.HireFlow.Candidates.Api.Models;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -16,6 +17,20 @@ var mongoCs =
 
 builder.Services.AddSingleton<IMongoClient>(_ => new MongoClient(mongoCs));
 builder.Services.AddSingleton<CandidatesDb>();
+
+// RabbitMQ notifications publisher
+builder.Services.AddSingleton<INotificationsCommandBus>(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+
+    var connString =
+        Environment.GetEnvironmentVariable("RabbitMQ") ??
+        config["RabbitMQ"] ??
+        throw new InvalidOperationException("Missing RabbitMQ connection string for Candidates");
+
+    return new RabbitMqNotificationsCommandBus(connString);
+});
+
 
 builder.Services.AddHttpLogging(logging =>
 {
@@ -204,6 +219,7 @@ app.MapPost("/applications/{id}/interviews", async (
     string id,
     ScheduleInterviewRequest req,
     CandidatesDb db,
+    INotificationsCommandBus notificationsBus,
     CancellationToken ct) =>
 {
     // 1) Load application
@@ -239,6 +255,33 @@ app.MapPost("/applications/{id}/interviews", async (
         cancellationToken: ct
     );
 
+    // 4) Publish email command to RabbitMQ
+    var subject = $"Interview scheduled for Job {interview.JobId}";
+    var body =
+        $"Hi {appDoc.CandidateName},\n\n" +
+        $"Your interview has been scheduled.\n\n" +
+        $"Date/Time (UTC): {interview.ScheduledAtUtc:yyyy-MM-dd HH:mm}\n" +
+        $"Duration: {interview.DurationMinutes} minutes\n" +
+        $"Location: {interview.Location}\n\n" +
+        $"Thank you,\nHireflow";
+
+    try
+    {
+        await notificationsBus.PublishSendEmailAsync(
+            to: appDoc.CandidateEmail,
+            subject: subject,
+            body: body,
+            applicationId: appDoc.Id,
+            interviewId: interview.Id,
+            jobId: interview.JobId,
+            ct: ct);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[WARN] Failed to publish email command for application {appDoc.Id}: {ex.Message}");
+        // we don't fail the scheduling itself for M1
+    }
+    
     var response = new InterviewResponse(
         interview.Id,
         interview.ApplicationId,
