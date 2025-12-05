@@ -290,14 +290,37 @@ GO
 ```
 
 second migration
-```
+```bash
 make migrations-add NAME=AddRecruiters COMPANYJOBS_CONNECTION_STRING='Server=mssql.hireflow.svc.cluster.local,1433;Database=hireflow;User ID=sa;Password=P@ssw0rd12345!;TrustServerCertificate=True'
 ```
 
 
-quick test -> a lot of targets on make file, or run the full test
+#### quick test 
+a lot of targets on make file, or run the full test
 
+#### check nosql
 
+connect to container
+```bash
+kubectl -n hireflow exec -it mongo-mongodb-0 -- bash
+```
+
+access database
+```bash
+mongosh -u root -p hireflowmongo
+```
+
+query
+```mongo
+use hireflow_candidates
+
+db.applications.find().pretty()
+```
+
+to allow access from host (basic foward)
+```bash
+kubectl -n hireflow port-forward svc/mongo-mongodb 27017:27017
+```
 
 
 #### troubleshooting
