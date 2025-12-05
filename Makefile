@@ -9,9 +9,11 @@ IMAGE_TAG 		?= $(shell git rev-parse --short HEAD)
 IMAGE_GATEWAY_API       	 := $(REGISTRY)/gateway:$(IMAGE_TAG)
 IMAGE_COMPANY_JOBS_API       := $(REGISTRY)/company-jobs:$(IMAGE_TAG)
 IMAGE_COMPANY_JOBS_MIGRATOR  := $(REGISTRY)/company-jobs-migrator:$(IMAGE_TAG)
+IMAGE_CANDIDATES_API         := $(REGISTRY)/candidates:$(IMAGE_TAG)
 
 CHART_COMPANY_JOBS := deploy/helm/company-jobs
 CHART_GATEWAY := deploy/helm/gateway
+CHART_CANDIDATES := deploy/helm/candidates
 
 # Gateway base URL (through which we hit the happy path)
 MINIIP := $(shell minikube ip)
@@ -20,19 +22,18 @@ GATEWAY_URL ?= http://$(HOST)
 
 # Path to the happy path script (from earlier)
 HAPPY_PATH_SCRIPT ?= scripts/happy-path.sh
-RESUME_PATH       ?= ./sample-resume.pdf
+RESUME_PATH       ?= ./misc/sample-resume.pdf
 
 # ---------- Phony targets ----------
-.PHONY: build build-ensure build-gateway build-company-jobs-api build-company-jobs-migrator \
-        logs-company-jobs \
-		logs-gateway \
+.PHONY: build build-ensure build-gateway build-company-jobs-api build-company-jobs-migrator build-candidates-api \
+        logs-company-jobs logs-gateway logs-candidates \
 		ingress-patch \
         test-happy-path
 
 # ---------- Build ----------
 MINIKUBE_DOCKER_ENV := eval "$$(minikube docker-env)"
 
-build: build-gateway build-company-jobs-api build-company-jobs-migrator ## Build all images
+build: build-gateway build-company-jobs-api build-company-jobs-migrator build-candidates-api ## Build all images
 
 build-gateway:
 	@$(MINIKUBE_DOCKER_ENV) && \
@@ -53,6 +54,12 @@ build-company-jobs-migrator:
 	  -t $(IMAGE_COMPANY_JOBS_MIGRATOR) \
 	  ./services/company-jobs
 
+build-candidates-api:
+	@$(MINIKUBE_DOCKER_ENV) && \
+	docker build \
+	  -t $(IMAGE_CANDIDATES_API) \
+	  ./services/candidates
+
 
 # ---------- Debug helpers ----------
 
@@ -61,6 +68,9 @@ logs-company-jobs: ## Tail logs of company-jobs pods
 
 logs-gateway: ## Tail logs of gateway pods
 	kubectl logs -n $(NAMESPACE) -l app.kubernetes.io/name=gateway -f --tail=200
+
+logs-candidates: ## Tail logs of candidates pods
+	kubectl logs -n $(NAMESPACE) -l app.kubernetes.io/name=candidates -f --tail=200
 
 # ---------- Milestone 1: Happy Path ----------
 
@@ -117,14 +127,16 @@ migrations-list:
 # Helm
 # -------------------------------------------
 
-RELEASE_COMPANY_JOBS := company-jobs
-RELEASE_GATEWAY := gateway
+RELEASE_COMPANY_JOBS     := company-jobs
+RELEASE_GATEWAY          := gateway
+RELEASE_CANDIDATES       := candidates
 
-.PHONY: helm-deploy-company-jobs helm-deploy-gateway \
-	helm-uninstall-company-jobs helm-uninstall-gateway \
-	helm-status-company-jobs helm-status-gateway
+.PHONY: helm-deploy-company-jobs helm-deploy-gateway helm-deploy-candidates \
+	helm-uninstall-company-jobs helm-uninstall-gateway helm-uninstall-candidates \
+	helm-update-gateway helm-update-company-jobs helm-update-candidates
+	helm-status-company-jobs helm-status-gateway helm-status-candidates
 
-helm-deploy: helm-deploy-gateway helm-deploy-company-jobs
+helm-deploy: helm-deploy-gateway helm-deploy-company-jobs helm-deploy-candidates
 
 helm-deploy-gateway:
 	@$(MINIKUBE_DOCKER_ENV) && \
@@ -136,7 +148,12 @@ helm-deploy-company-jobs:
 	helm upgrade --install $(RELEASE_COMPANY_JOBS) $(CHART_COMPANY_JOBS) -n $(NAMESPACE) \
 		--set image.tag=${IMAGE_TAG}
 
-helm-update: helm-update-gateway helm-update-company-jobs
+helm-deploy-candidates:
+	@$(MINIKUBE_DOCKER_ENV) && \
+	helm upgrade --install $(RELEASE_CANDIDATES) $(CHART_CANDIDATES) -n $(NAMESPACE) \
+		--set image.tag=${IMAGE_TAG}
+
+helm-update: helm-update-gateway helm-update-company-jobs helm-update-candidates
 
 helm-update-gateway:
 	helm dependency update $(CHART_GATEWAY) -n $(NAMESPACE)
@@ -144,13 +161,20 @@ helm-update-gateway:
 helm-update-company-jobs:
 	helm dependency update $(CHART_COMPANY_JOBS) -n $(NAMESPACE)
 
-helm-uninstall: helm-uninstall-gateway helm-uninstall-company-jobs
+helm-update-candidates:
+	helm dependency update $(CHART_CANDIDATES) -n $(NAMESPACE)
+
+
+helm-uninstall: helm-uninstall-gateway helm-uninstall-company-jobs helm-uninstall-candidates
 
 helm-uninstall-gateway:
 	helm uninstall $(RELEASE_GATEWAY) -n $(NAMESPACE) || true
 
 helm-uninstall-company-jobs:
 	helm uninstall $(RELEASE_COMPANY_JOBS) -n $(NAMESPACE) || true
+
+helm-uninstall-candidates:
+	helm uninstall $(CHART_CANDIDATES) -n $(NAMESPACE) || true
 
 helm-status-company-jobs:
 	@echo "🔎 Helm release:"
@@ -166,6 +190,12 @@ helm-status-gateway:
 	@echo "🔎 Pods:"
 	@kubectl get pods -n $(NAMESPACE) -l app.kubernetes.io/name=gateway || true
 
+helm-status-candidates:
+	@echo "🔎 Helm release:"
+	@helm status $(CHART_CANDIDATES) -n $(NAMESPACE) || echo "No Helm release found"
+	@echo
+	@echo "🔎 Pods:"
+	@kubectl get pods -n $(NAMESPACE) -l app.kubernetes.io/name=candidates || true
 
 # -------------------------------------------
 # curl: quick calls

@@ -7,17 +7,17 @@ EXPOSE 8081
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
-COPY ["WastingNoTime.Hireflow.Candidates.csproj", "./"]
-RUN dotnet restore "WastingNoTime.Hireflow.Candidates.csproj"
+COPY ["WastingNoTime.Hireflow.Candidates.Api.csproj", "./"]
+RUN dotnet restore "WastingNoTime.Hireflow.Candidates.Api.csproj"
 COPY . .
 WORKDIR "/src/"
-RUN dotnet build "./WastingNoTime.Hireflow.Candidates.csproj" -c $BUILD_CONFIGURATION -o /app/build
+RUN dotnet build "./WastingNoTime.Hireflow.Candidates.Api.csproj" -c $BUILD_CONFIGURATION -o /app/build
 
 FROM build AS publish
 ARG BUILD_CONFIGURATION=Release
-RUN dotnet publish "./WastingNoTime.Hireflow.Candidates.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
+RUN dotnet publish "./WastingNoTime.Hireflow.Candidates.Api.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
-ENTRYPOINT ["dotnet", "WastingNoTime.Hireflow.Candidates.dll"]
+ENTRYPOINT ["dotnet", "WastingNoTime.Hireflow.Candidates.Api.dll"]

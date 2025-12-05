@@ -7,7 +7,7 @@ set -euo pipefail
 # External entry (your API gateway / ingress)
 BASE_URL="${BASE_URL:-http://hireflow.local}"   # e.g., http://127.0.0.1:8080 or http://gateway.hireflow.local
 AUTH="${AUTH:-}"                                 # e.g., "Authorization: Bearer <token>" if you’ve wired auth
-RESUME_PATH="${RESUME_PATH:-./sample-resume.pdf}"
+RESUME_PATH="${RESUME_PATH:-./misc/sample-resume.pdf}"
 
 HEADERS=(-H "Content-Type: application/json")
 if [[ -n "$AUTH" ]]; then
@@ -72,3 +72,15 @@ JOB_PUB_JSON=$(
 )
 
 echo "Job published: $(echo "$JOB_PUB_JSON" | jq -r '.status')"
+
+
+# 5) post application
+APPLICATION_JSON=$(
+  curl -sS -X POST "$BASE_URL/applications" \
+    -F "jobId=$JOB_ID" \
+    -F "name=John Doe" \
+    -F "email=john.doe@example.com" \
+    -F "resume=@${RESUME_PATH};type=application/pdf"
+)
+
+echo "$APPLICATION_JSON" | jq

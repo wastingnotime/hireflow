@@ -1,6 +1,6 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WastingNoTime.Hireflow.Candidates", "WastingNoTime.Hireflow.Candidates.csproj", "{74B7201D-0F41-479B-BA7E-45CFB7477E9F}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WastingNoTime.Hireflow.Candidates.Api", "WastingNoTime.Hireflow.Candidates.Api.csproj", "{74B7201D-0F41-479B-BA7E-45CFB7477E9F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
