@@ -242,3 +242,23 @@ api-recruiters-create:
 	curl -sS -X POST $(GATEWAY_URL)/companies/$(COMPANY_ID)/recruiters \
 		-H "Content-Type: application/json" \
 		-d '{"companyId":$(COMPANY_ID),"name": "Henrique Riccio", "email":"hriccio@wastingnotime.org"}' | jq
+
+
+# -------------------------------------------
+# MongoDB shell (hireflow namespace)
+# -------------------------------------------
+
+NAMESPACE ?= hireflow
+
+.PHONY: mongo-shell mongo-port-forward
+
+## Open a shell inside the primary MongoDB pod with mongosh
+mongo-shell:
+	@echo "🔍 Looking for primary MongoDB pod..."
+	@POD=$$(kubectl -n $(NAMESPACE) get pods -l app.kubernetes.io/component=mongodb -o jsonpath='{.items[0].metadata.name}'); \
+	echo "📦 Connecting to pod: $$POD"; \
+	kubectl -n $(NAMESPACE) exec -it $$POD -- bash -c 'mongosh -u root -p "$${MONGODB_ROOT_PASSWORD:-hireflowmongo}" --authenticationDatabase admin'
+
+## Optional: port-forward MongoDB to localhost for external tools
+mongo-port-forward:
+	kubectl -n $(NAMESPACE) port-forward svc/mongo-mongodb 27017:27017

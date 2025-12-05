@@ -16,4 +16,7 @@ public sealed class CandidatesDb
 
     public IMongoCollection<Application> Applications =>
         _db.GetCollection<Application>("applications");
+
+    public IMongoCollection<Interview> Interviews =>
+        _db.GetCollection<Interview>("interviews");
 }
