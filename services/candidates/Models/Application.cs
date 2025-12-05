@@ -18,4 +18,9 @@ public sealed class Application
     public string Status { get; set; } = "received";  // received | screened | interview | rejected | hired
 
     public DateTime CreatedAtUtc { get; set; }
+    
+    // ---- Screening fields (for M1 + rule engine later) ----
+    public int? ScreeningScore { get; set; }
+    public DateTime? ScreenedAtUtc { get; set; }
+    public string? ScreeningNotes { get; set; }
 }
