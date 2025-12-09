@@ -1,83 +1,125 @@
-# Makefile for Hireflow / company-jobs
-
-# ---------- Config ----------
-REGISTRY        ?= hireflow
-NAMESPACE       ?= hireflow
-IMAGE_TAG 		?= $(shell git rev-parse --short HEAD)
-
-
-IMAGE_GATEWAY_API       	 := $(REGISTRY)/gateway:$(IMAGE_TAG)
-IMAGE_COMPANY_JOBS_API       := $(REGISTRY)/company-jobs:$(IMAGE_TAG)
-IMAGE_COMPANY_JOBS_MIGRATOR  := $(REGISTRY)/company-jobs-migrator:$(IMAGE_TAG)
-IMAGE_CANDIDATES_API         := $(REGISTRY)/candidates:$(IMAGE_TAG)
-
-CHART_COMPANY_JOBS := deploy/helm/company-jobs
-CHART_GATEWAY := deploy/helm/gateway
-CHART_CANDIDATES := deploy/helm/candidates
+# -------------------------------------------
+# Config
+# -------------------------------------------
+NAMESPACE ?= hireflow
+SERVICE_COMPANY_JOBS := company-jobs
+SERVICE_COMPANY_JOBS_MIGRATOR := company-jobs-migrator
+SERVICE_GATEWAY := gateway
+SERVICE_CANDIDATES := candidates
+SERVICE_APPLICATIONS := applications
+SERVICE_IDENTITY := identity
+SERVICE_SEARCH := search
+SERVICE_NOTIFICATIONS := notifications
 
 # Gateway base URL (through which we hit the happy path)
 MINIIP := $(shell minikube ip)
 HOST := hireflow.$(shell printf "%s" "$(MINIIP)" | tr . -).nip.io
 GATEWAY_URL ?= http://$(HOST)
 
-# Path to the happy path script (from earlier)
-HAPPY_PATH_SCRIPT ?= scripts/happy-path.sh
-RESUME_PATH       ?= ./misc/sample-resume.pdf
+# -------------------------------------------
+# Build
+# -------------------------------------------
+REGISTRY ?= hireflow
+IMAGE_TAG ?= $(shell git rev-parse --short HEAD)
+IMAGE_GATEWAY_API := $(REGISTRY)/$(SERVICE_GATEWAY):$(IMAGE_TAG)
+IMAGE_COMPANY_JOBS_API := $(REGISTRY)/$(SERVICE_COMPANY_JOBS):$(IMAGE_TAG)
+IMAGE_COMPANY_JOBS_MIGRATOR := $(REGISTRY)/$(SERVICE_COMPANY_JOBS_MIGRATOR):$(IMAGE_TAG)
+IMAGE_CANDIDATES_API := $(REGISTRY)/$(SERVICE_CANDIDATES):$(IMAGE_TAG)
+IMAGE_APPLICATIONS_API := $(REGISTRY)/$(SERVICE_APPLICATIONS):$(IMAGE_TAG)
+IMAGE_SEARCH_API := $(REGISTRY)/$(SERVICE_SEARCH):$(IMAGE_TAG)
+IMAGE_IDENTITY_API := $(REGISTRY)/$(SERVICE_IDENTITY):$(IMAGE_TAG)
+IMAGE_NOTIFICATIONS := $(REGISTRY)/$(SERVICE_NOTIFICATIONS):$(IMAGE_TAG)
 
-# ---------- Phony targets ----------
-.PHONY: build build-ensure build-gateway build-company-jobs-api build-company-jobs-migrator build-candidates-api \
-        logs-company-jobs logs-gateway logs-candidates logs-notifications \
+MINIKUBE_DOCKER_ENV := eval "$$(minikube docker-env)"
+
+.PHONY: build build-gateway build-company-jobs-api build-company-jobs-migrator build-candidates-api build-applications-api build-search-api build-identity-api build-notifications-api \
+        logs-company-jobs logs-gateway logs-candidates logs-notifications logs-applications logs-search logs-identity \
 		ingress-patch \
         test-happy-path
 
-# ---------- Build ----------
-MINIKUBE_DOCKER_ENV := eval "$$(minikube docker-env)"
-
-build: build-gateway build-company-jobs-api build-company-jobs-migrator build-candidates-api ## Build all images
+build: build-gateway build-company-jobs-api build-company-jobs-migrator build-candidates-api build-applications-api build-search-api build-identity-api build-notifications-api
 
 build-gateway:
 	@$(MINIKUBE_DOCKER_ENV) && \
 	docker build \
 	  -t $(IMAGE_GATEWAY_API) \
-	  ./services/gateway
+	  ./services/$(SERVICE_GATEWAY)
 
 build-company-jobs-api:
 	@$(MINIKUBE_DOCKER_ENV) && \
 	docker build \
 	  -t $(IMAGE_COMPANY_JOBS_API) \
-	  ./services/company-jobs
+	  ./services/$(SERVICE_COMPANY_JOBS)
 
 build-company-jobs-migrator:
 	@$(MINIKUBE_DOCKER_ENV) && \
 	docker build \
 	  -f ./services/company-jobs/Dockerfile.migrator \
 	  -t $(IMAGE_COMPANY_JOBS_MIGRATOR) \
-	  ./services/company-jobs
+	  ./services/$(SERVICE_COMPANY_JOBS)
 
 build-candidates-api:
 	@$(MINIKUBE_DOCKER_ENV) && \
 	docker build \
 	  -t $(IMAGE_CANDIDATES_API) \
-	  ./services/candidates
+	  ./services/$(SERVICE_CANDIDATES)
 
+build-applications-api:
+	@$(MINIKUBE_DOCKER_ENV) && \
+	docker build \
+	  -t $(IMAGE_APPLICATIONS_API) \
+	  ./services/$(SERVICE_APPLICATIONS)
 
-# ---------- Debug helpers ----------
+build-search-api:
+	@$(MINIKUBE_DOCKER_ENV) && \
+	docker build \
+	  -t $(IMAGE_SEARCH_API) \
+	  ./services/$(SERVICE_SEARCH)
 
-logs-company-jobs: ## Tail logs of company-jobs pods
-	kubectl logs -n $(NAMESPACE) -l app.kubernetes.io/name=company-jobs -f --tail=200
+build-identity-api:
+	@$(MINIKUBE_DOCKER_ENV) && \
+	docker build \
+	  -t $(IMAGE_IDENTITY_API) \
+	  ./services/$(SERVICE_IDENTITY)
 
-logs-gateway: ## Tail logs of gateway pods
-	kubectl logs -n $(NAMESPACE) -l app.kubernetes.io/name=gateway -f --tail=200
+build-notifications-api:
+	@$(MINIKUBE_DOCKER_ENV) && \
+	docker build \
+	  -t $(IMAGE_NOTIFICATIONS) \
+	  ./workers/$(SERVICE_NOTIFICATIONS)
 
-logs-candidates: ## Tail logs of candidates pods
-	kubectl logs -n $(NAMESPACE) -l app.kubernetes.io/name=candidates -f --tail=200
+# -------------------------------------------
+# Debug helpers
+# -------------------------------------------
+
+logs-company-jobs:
+	kubectl logs -n $(NAMESPACE) -l app.kubernetes.io/name=$(SERVICE_COMPANY_JOBS) -f --tail=200
+
+logs-gateway:
+	kubectl logs -n $(NAMESPACE) -l app.kubernetes.io/name=$(SERVICE_GATEWAY) -f --tail=200
+
+logs-candidates:
+	kubectl logs -n $(NAMESPACE) -l app.kubernetes.io/name=$(SERVICE_CANDIDATES) -f --tail=200
 
 logs-notifications:
-	kubectl logs -n $(NAMESPACE) -l app.kubernetes.io/name=notifications -f --tail=200
+	kubectl logs -n $(NAMESPACE) -l app.kubernetes.io/name=$(SERVICE_NOTIFICATIONS) -f --tail=200
+
+logs-applications:
+	kubectl logs -n $(NAMESPACE) -l app.kubernetes.io/name=$(SERVICE_APPLICATIONS) -f --tail=200
+
+logs-search:
+	kubectl logs -n $(NAMESPACE) -l app.kubernetes.io/name=$(SERVICE_SEARCH) -f --tail=200
+
+logs-identity:
+	kubectl logs -n $(NAMESPACE) -l app.kubernetes.io/name=$(SERVICE_IDENTITY) -f --tail=200
+
 #kubectl n $(NAMESPACE) exec -it deploy/notification -- bash
 
-
 # ---------- Milestone 1: Happy Path ----------
+
+# Path to the happy path script (from earlier)
+HAPPY_PATH_SCRIPT ?= scripts/happy-path.sh
+RESUME_PATH ?= ./misc/sample-resume.pdf
 
 ingress-patch: ## updates ingress to understand that host and forward accordingly
 	kubectl -n hireflow patch ingress gateway \
@@ -126,24 +168,34 @@ migrations-list:
 		--project $(MIGRATIONS_PROJECT) \
 		--startup-project $(MIGRATIONS_STARTUP)
 
-
-
 # -------------------------------------------
 # Helm
 # -------------------------------------------
 
-RELEASE_COMPANY_JOBS     := company-jobs
-RELEASE_GATEWAY          := gateway
-RELEASE_CANDIDATES       := candidates
+RELEASE_COMPANY_JOBS := $(SERVICE_COMPANY_JOBS)
+RELEASE_GATEWAY := $(SERVICE_GATEWAY)
+RELEASE_CANDIDATES := $(SERVICE_CANDIDATES)
+RELEASE_APPLICATIONS := $(SERVICE_APPLICATIONS)
+RELEASE_IDENTITY := $(SERVICE_IDENTITY)
+RELEASE_SEARCH := $(SERVICE_SEARCH)
+RELEASE_NOTIFICATIONS := $(SERVICE_NOTIFICATIONS)
 
-.PHONY: helm-deploy-company-jobs helm-deploy-gateway helm-deploy-candidates \
-	helm-uninstall-company-jobs helm-uninstall-gateway helm-uninstall-candidates \
-	helm-update-gateway helm-update-company-jobs helm-update-candidates
-	helm-status-company-jobs helm-status-gateway helm-status-candidates
+CHART_COMPANY_JOBS := deploy/helm/$(SERVICE_COMPANY_JOBS)
+CHART_GATEWAY := deploy/helm/$(SERVICE_GATEWAY)
+CHART_CANDIDATES := deploy/helm/$(SERVICE_CANDIDATES)
+CHART_APPLICATIONS := deploy/helm/$(SERVICE_APPLICATIONS)
+CHART_SEARCH := deploy/helm/$(SERVICE_SEARCH)
+CHART_IDENTITY := deploy/helm/$(SERVICE_IDENTITY)
+CHART_NOTIFICATIONS := deploy/helm/$(SERVICE_NOTIFICATIONS)
 
-helm-deploy: helm-deploy-gateway helm-deploy-company-jobs helm-deploy-candidates
+.PHONY: helm-deploy-company-jobs helm-deploy-gateway helm-deploy-candidates helm-deploy-applications helm-deploy-identity helm-deploy-search helm-deploy-notifications \
+	helm-uninstall-company-jobs helm-uninstall-gateway helm-uninstall-candidates helm-uninstall-applications helm-uninstall-identity helm-uninstall-search helm-uninstall-notifications \
+	helm-update-gateway helm-update-company-jobs helm-update-candidates helm-update-applications helm-update-identity helm-update-search helm-update-notifications \
+	helm-status-company-jobs helm-status-gateway helm-status-candidates helm-status-applications helm-status-identity helm-status-search helm-status-notifications
 
-helm-deploy-gateway:
+helm-deploy: helm-deploy-gateway helm-deploy-company-jobs helm-deploy-candidates helm-deploy-applications helm-deploy-identity helm-deploy-search helm-deploy-notifications
+
+helm-deploy-gateway: ingress-patch
 	@$(MINIKUBE_DOCKER_ENV) && \
 	helm upgrade --install $(RELEASE_GATEWAY) $(CHART_GATEWAY) -n $(NAMESPACE) \
 		--set image.tag=${IMAGE_TAG}
@@ -158,7 +210,27 @@ helm-deploy-candidates:
 	helm upgrade --install $(RELEASE_CANDIDATES) $(CHART_CANDIDATES) -n $(NAMESPACE) \
 		--set image.tag=${IMAGE_TAG}
 
-helm-update: helm-update-gateway helm-update-company-jobs helm-update-candidates
+helm-deploy-applications:
+	@$(MINIKUBE_DOCKER_ENV) && \
+	helm upgrade --install $(RELEASE_APPLICATIONS) $(CHART_APPLICATIONS) -n $(NAMESPACE) \
+		--set image.tag=${IMAGE_TAG}
+
+helm-deploy-identity:
+	@$(MINIKUBE_DOCKER_ENV) && \
+	helm upgrade --install $(RELEASE_IDENTITY) $(CHART_IDENTITY) -n $(NAMESPACE) \
+		--set image.tag=${IMAGE_TAG}
+
+helm-deploy-search:
+	@$(MINIKUBE_DOCKER_ENV) && \
+	helm upgrade --install $(RELEASE_SEARCH) $(CHART_SEARCH) -n $(NAMESPACE) \
+		--set image.tag=${IMAGE_TAG}
+
+helm-deploy-notifications:
+	@$(MINIKUBE_DOCKER_ENV) && \
+	helm upgrade --install $(RELEASE_NOTIFICATIONS) $(CHART_NOTIFICATIONS) -n $(NAMESPACE) \
+		--set image.tag=${IMAGE_TAG}
+
+helm-update: helm-update-gateway helm-update-company-jobs helm-update-candidates helm-update-applications helm-update-identity helm-update-search helm-update-notifications
 
 helm-update-gateway:
 	helm dependency update $(CHART_GATEWAY) -n $(NAMESPACE)
@@ -169,8 +241,19 @@ helm-update-company-jobs:
 helm-update-candidates:
 	helm dependency update $(CHART_CANDIDATES) -n $(NAMESPACE)
 
+helm-update-applications:
+	helm dependency update $(CHART_APPLICATIONS) -n $(NAMESPACE)
 
-helm-uninstall: helm-uninstall-gateway helm-uninstall-company-jobs helm-uninstall-candidates
+helm-update-identity:
+	helm dependency update $(CHART_IDENTITY) -n $(NAMESPACE)
+
+helm-update-search:
+	helm dependency update $(CHART_SEARCH) -n $(NAMESPACE)
+
+helm-update-notifications:
+	helm dependency update $(CHART_NOTIFICATIONS) -n $(NAMESPACE)
+
+helm-uninstall: helm-uninstall-gateway helm-uninstall-company-jobs helm-uninstall-candidates helm-uninstall-applications helm-uninstall-identity helm-uninstall-search helm-uninstall-notifications
 
 helm-uninstall-gateway:
 	helm uninstall $(RELEASE_GATEWAY) -n $(NAMESPACE) || true
@@ -179,35 +262,75 @@ helm-uninstall-company-jobs:
 	helm uninstall $(RELEASE_COMPANY_JOBS) -n $(NAMESPACE) || true
 
 helm-uninstall-candidates:
-	helm uninstall $(CHART_CANDIDATES) -n $(NAMESPACE) || true
+	helm uninstall $(RELEASE_CANDIDATES) -n $(NAMESPACE) || true
+
+helm-uninstall-applications:
+	helm uninstall $(RELEASE_APPLICATIONS) -n $(NAMESPACE) || true
+
+helm-uninstall-identity:
+	helm uninstall $(RELEASE_IDENTITY) -n $(NAMESPACE) || true
+
+helm-uninstall-search:
+	helm uninstall $(RELEASE_SEARCH) -n $(NAMESPACE) || true
+
+helm-uninstall-notifications:
+	helm uninstall $(RELEASE_NOTIFICATIONS) -n $(NAMESPACE) || true
 
 helm-status-company-jobs:
 	@echo "🔎 Helm release:"
 	@helm status $(RELEASE_COMPANY_JOBS) -n $(NAMESPACE) || echo "No Helm release found"
 	@echo
 	@echo "🔎 Pods:"
-	@kubectl get pods -n $(NAMESPACE) -l app.kubernetes.io/name=company-jobs || true
+	@kubectl get pods -n $(NAMESPACE) -l app.kubernetes.io/name=$(SERVICE_COMPANY_JOBS) || true
 
 helm-status-gateway:
 	@echo "🔎 Helm release:"
 	@helm status $(RELEASE_GATEWAY) -n $(NAMESPACE) || echo "No Helm release found"
 	@echo
 	@echo "🔎 Pods:"
-	@kubectl get pods -n $(NAMESPACE) -l app.kubernetes.io/name=gateway || true
+	@kubectl get pods -n $(NAMESPACE) -l app.kubernetes.io/name=$(SERVICE_GATEWAY) || true
 
 helm-status-candidates:
 	@echo "🔎 Helm release:"
-	@helm status $(CHART_CANDIDATES) -n $(NAMESPACE) || echo "No Helm release found"
+	@helm status $(RELEASE_CANDIDATES) -n $(NAMESPACE) || echo "No Helm release found"
 	@echo
 	@echo "🔎 Pods:"
-	@kubectl get pods -n $(NAMESPACE) -l app.kubernetes.io/name=candidates || true
+	@kubectl get pods -n $(NAMESPACE) -l app.kubernetes.io/name=$(SERVICE_CANDIDATES) || true
+
+helm-status-applications:
+	@echo "🔎 Helm release:"
+	@helm status $(RELEASE_APPLICATIONS) -n $(NAMESPACE) || echo "No Helm release found"
+	@echo
+	@echo "🔎 Pods:"
+	@kubectl get pods -n $(NAMESPACE) -l app.kubernetes.io/name=$(SERVICE_APPLICATIONS) || true
+
+helm-status-identity:
+	@echo "🔎 Helm release:"
+	@helm status $(RELEASE_IDENTITY) -n $(NAMESPACE) || echo "No Helm release found"
+	@echo
+	@echo "🔎 Pods:"
+	@kubectl get pods -n $(NAMESPACE) -l app.kubernetes.io/name=$(SERVICE_IDENTITY) || true
+
+helm-status-search:
+	@echo "🔎 Helm release:"
+	@helm status $(RELEASE_SEARCH) -n $(NAMESPACE) || echo "No Helm release found"
+	@echo
+	@echo "🔎 Pods:"
+	@kubectl get pods -n $(NAMESPACE) -l app.kubernetes.io/name=$(SERVICE_SEARCH) || true
+
+helm-status-notifications:
+	@echo "🔎 Helm release:"
+	@helm status $(RELEASE_NOTIFICATIONS) -n $(NAMESPACE) || echo "No Helm release found"
+	@echo
+	@echo "🔎 Pods:"
+	@kubectl get pods -n $(NAMESPACE) -l app.kubernetes.io/name=$(SERVICE_NOTIFICATIONS) || true
 
 # -------------------------------------------
 # curl: quick calls
 # -------------------------------------------
 
-JOB_ID ?=1
-COMPANY_ID ?=1
+JOB_ID ?= 1
+COMPANY_ID ?= 1
 #RECRUITER_ID ?=1
 
 .PHONY: api-healthz \
@@ -217,6 +340,11 @@ COMPANY_ID ?=1
 
 api-healthz:
 	curl -s $(GATEWAY_URL)/healthz | jq
+
+# # some domain calls you already have from M1
+# curl -sS http://hireflow.local/companies
+# curl -sS http://hireflow.local/candidates
+
 
 api-companies-create:
 	curl -sS -X POST $(GATEWAY_URL)/companies \
@@ -248,12 +376,9 @@ api-recruiters-create:
 		-H "Content-Type: application/json" \
 		-d '{"companyId":$(COMPANY_ID),"name": "Henrique Riccio", "email":"hriccio@wastingnotime.org"}' | jq
 
-
 # -------------------------------------------
 # MongoDB shell (hireflow namespace)
 # -------------------------------------------
-
-NAMESPACE ?= hireflow
 
 .PHONY: mongo-shell mongo-port-forward
 

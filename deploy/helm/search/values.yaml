@@ -3,7 +3,9 @@ image:
   tag: local
   pullPolicy: IfNotPresent
 
-replicaCount: 1
+replicaCount: 2
+
+fullnameOverride: search
 
 service:
   type: ClusterIP
