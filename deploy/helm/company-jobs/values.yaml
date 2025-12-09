@@ -13,7 +13,7 @@ migrator:
 db:
   connectionStringKey: SqlServer   # <-- reuse existing key for now
 
-replicaCount: 1
+replicaCount: 2
 
 fullnameOverride: company-jobs
 
