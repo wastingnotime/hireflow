@@ -1,36 +1,45 @@
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpLogging;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using MongoDB.Driver;
+using RabbitMQ.Client;
 using WastingNoTime.HireFlow.Candidates.Api.Contracts;
 using WastingNoTime.HireFlow.Candidates.Api.Data;
+using WastingNoTime.HireFlow.Candidates.Api.HealthCheck;
 using WastingNoTime.HireFlow.Candidates.Api.Messaging;
 using WastingNoTime.HireFlow.Candidates.Api.Models;
 
 var builder = WebApplication.CreateBuilder(args);
-var configuration = builder.Configuration;
 
-// Mongo connection
-var mongoCs =
+var mongoConnectionString =
     Environment.GetEnvironmentVariable("CANDIDATES_MONGO_CONNECTION_STRING") ??
-    configuration["CANDIDATES_MONGO_CONNECTION_STRING"] ??
-    configuration["Mongo"] ??
+    builder.Configuration["CANDIDATES_MONGO_CONNECTION_STRING"] ??
+    builder.Configuration.GetConnectionString("Mongo") ??
     throw new InvalidOperationException("Missing Mongo connection string for Candidates");
 
-builder.Services.AddSingleton<IMongoClient>(_ => new MongoClient(mongoCs));
-builder.Services.AddSingleton<CandidatesDb>();
+var mongoClient = new MongoClient(mongoConnectionString);
+builder.Services.AddSingleton<IMongoClient>(mongoClient);
 
-// RabbitMQ notifications publisher
-builder.Services.AddSingleton<INotificationsCommandBus>(sp =>
+var rabbitConnectionString =
+    Environment.GetEnvironmentVariable("RabbitMQ") ??
+    builder.Configuration.GetConnectionString("RabbitMQ") ??
+    builder.Configuration["RABBITMQ_CONNECTION_STRING"] ??
+    throw new InvalidOperationException("Missing RabbitMQ connection string for Candidates");
+
+var rabbitFactory = new ConnectionFactory
 {
-    var config = sp.GetRequiredService<IConfiguration>();
+    Uri = new Uri(rabbitConnectionString)
+};
+builder.Services.AddSingleton(rabbitFactory);
 
-    var connString =
-        Environment.GetEnvironmentVariable("RabbitMQ") ??
-        config["RabbitMQ"] ??
-        throw new InvalidOperationException("Missing RabbitMQ connection string for Candidates");
+builder.Services.AddHealthChecks()
+    .AddCheck("self", () => HealthCheckResult.Healthy())
+    .AddCheck<MongoHealthCheck>("mongo")
+    .AddCheck<RabbitMqHealthCheck>("rabbitmq");
 
-    return new RabbitMqNotificationsCommandBus(connString);
-});
-
+builder.Services.AddSingleton<IMongoClient>(_ => new MongoClient(mongoConnectionString));
+builder.Services.AddSingleton<CandidatesDb>();
+builder.Services.AddSingleton<INotificationsCommandBus>(_ => new RabbitMqNotificationsCommandBus(rabbitConnectionString));
 
 builder.Services.AddHttpLogging(logging =>
 {
@@ -281,7 +290,7 @@ app.MapPost("/applications/{id}/interviews", async (
         Console.WriteLine($"[WARN] Failed to publish email command for application {appDoc.Id}: {ex.Message}");
         // we don't fail the scheduling itself for M1
     }
-    
+
     var response = new InterviewResponse(
         interview.Id,
         interview.ApplicationId,
@@ -357,6 +366,17 @@ app.MapGet("/interviews/{id}", async (
     return Results.Ok(response);
 });
 
-app.MapGet("/healthz", () => Results.Ok(new { status = "ok", svc = app.Environment.ApplicationName }));
+// Liveness – just says "process is running"
+app.MapHealthChecks("/healthz", new HealthCheckOptions
+{
+    Predicate = _ => false // don't run registered checks, just 200 if app is alive
+});
+
+// Readiness – can run all checks (for now it's same as self)
+app.MapHealthChecks("/ready", new HealthCheckOptions
+{
+    Predicate = _ => true
+});
+
 
 app.Run();

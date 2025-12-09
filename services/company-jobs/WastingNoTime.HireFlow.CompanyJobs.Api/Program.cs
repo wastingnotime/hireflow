@@ -1,24 +1,27 @@
+using System.Text.Json;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpLogging;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using WastingNoTime.HireFlow.CompanyJobs.Api.Endpoints;
+using WastingNoTime.HireFlow.CompanyJobs.Api.HealthCheck;
 using WastingNoTime.HireFlow.CompanyJobs.Data;
-using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
-var configuration = builder.Configuration;
 
-// Read from Environment first
-var cs =
+var dbConnectionString =
     Environment.GetEnvironmentVariable("COMPANYJOBS_CONNECTION_STRING") ??
-    configuration["COMPANYJOBS_CONNECTION_STRING"] ??
-    configuration["CONNECTION_STRING"] ??
-    configuration.GetConnectionString("CompanyJobs") ??
+    builder.Configuration["COMPANYJOBS_CONNECTION_STRING"] ??
+    builder.Configuration["CONNECTION_STRING"] ??
+    builder.Configuration.GetConnectionString("CompanyJobs") ??
     throw new InvalidOperationException("Missing DB connection string for CompanyJobs");
 
+builder.Services.AddHealthChecks()
+    .AddCheck("self", () => HealthCheckResult.Healthy())
+    .AddCheck("sql", new SqlConnectionHealthCheck(dbConnectionString));;
 
 builder.Services.AddDbContext<CompanyJobsDbContext>(opt =>
-    opt.UseSqlServer(cs, sql => { sql.MigrationsHistoryTable("__EFMigrationsHistory", "companyjobs"); }));
-
+    opt.UseSqlServer(dbConnectionString, sql => { sql.MigrationsHistoryTable("__EFMigrationsHistory", "companyjobs"); }));
 
 builder.Services.ConfigureHttpJsonOptions(opt =>
 {
@@ -48,7 +51,18 @@ if (app.Environment.IsDevelopment())
 
 app.UseRouting();
 
-app.MapGet("/healthz", () => Results.Ok(new { status = "ok", svc = app.Environment.ApplicationName }));
+// Liveness – just says "process is running"
+app.MapHealthChecks("/healthz", new HealthCheckOptions
+{
+    Predicate = _ => false // don't run registered checks, just 200 if app is alive
+});
+
+// Readiness – can run all checks (for now it's same as self)
+app.MapHealthChecks("/ready", new HealthCheckOptions
+{
+    Predicate = _ => true
+});
+
 
 app.MapCompanyJobsEndpoints();
 

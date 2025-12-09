@@ -30,14 +30,14 @@ IMAGE_SEARCH_API := $(REGISTRY)/$(SERVICE_SEARCH):$(IMAGE_TAG)
 IMAGE_IDENTITY_API := $(REGISTRY)/$(SERVICE_IDENTITY):$(IMAGE_TAG)
 IMAGE_NOTIFICATIONS := $(REGISTRY)/$(SERVICE_NOTIFICATIONS):$(IMAGE_TAG)
 
-MINIKUBE_DOCKER_ENV := eval "$$(minikube docker-env)"
-
 .PHONY: build build-gateway build-company-jobs-api build-company-jobs-migrator build-candidates-api build-applications-api build-search-api build-identity-api build-notifications-api \
         logs-company-jobs logs-gateway logs-candidates logs-notifications logs-applications logs-search logs-identity \
 		ingress-patch \
         test-happy-path
 
 build: build-gateway build-company-jobs-api build-company-jobs-migrator build-candidates-api build-applications-api build-search-api build-identity-api build-notifications-api
+
+MINIKUBE_DOCKER_ENV := eval "$$(minikube docker-env)"
 
 build-gateway:
 	@$(MINIKUBE_DOCKER_ENV) && \
@@ -195,10 +195,11 @@ CHART_NOTIFICATIONS := deploy/helm/$(SERVICE_NOTIFICATIONS)
 
 helm-deploy: helm-deploy-gateway helm-deploy-company-jobs helm-deploy-candidates helm-deploy-applications helm-deploy-identity helm-deploy-search helm-deploy-notifications
 
-helm-deploy-gateway: ingress-patch
+helm-deploy-gateway:
 	@$(MINIKUBE_DOCKER_ENV) && \
 	helm upgrade --install $(RELEASE_GATEWAY) $(CHART_GATEWAY) -n $(NAMESPACE) \
-		--set image.tag=${IMAGE_TAG}
+		--set image.tag=${IMAGE_TAG}; \
+	$(MAKE) ingress-patch;
 
 helm-deploy-company-jobs:
 	@$(MINIKUBE_DOCKER_ENV) && \
@@ -339,7 +340,10 @@ COMPANY_ID ?= 1
 	api-recruiters-get-all api-recruiters-create
 
 api-healthz:
-	curl -s $(GATEWAY_URL)/healthz | jq
+	curl -s $(GATEWAY_URL)/healthz && echo
+
+api-ready:
+	curl -s $(GATEWAY_URL)/ready && echo
 
 # # some domain calls you already have from M1
 # curl -sS http://hireflow.local/companies
@@ -392,3 +396,7 @@ mongo-shell:
 ## Optional: port-forward MongoDB to localhost for external tools
 mongo-port-forward:
 	kubectl -n $(NAMESPACE) port-forward svc/mongo-mongodb 27017:27017
+
+
+## TODO: diagnose
+# helm template company-jobs deploy/helm/company-jobs -n hireflow
