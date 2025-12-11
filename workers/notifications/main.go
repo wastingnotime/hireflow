@@ -4,14 +4,26 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/rabbitmq/amqp091-go"
 )
+
+type SendEmailCommand struct {
+	Type          string `json:"type"`
+	To            string `json:"to"`
+	Subject       string `json:"subject"`
+	Body          string `json:"body"`
+	ApplicationID string `json:"applicationId"`
+	InterviewID   string `json:"interviewId"`
+	JobID         int64  `json:"jobId"`
+}
 
 // newWorkerID generates a short ID so you can distinguish worker instances
 func newWorkerID() string {
@@ -98,35 +110,10 @@ func main() {
 	// channel to signal that the consumer loop stopped
 	done := make(chan struct{}, 1)
 
-	//todo: put on file start
-	type SendEmailCommand struct {
-		Type          string `json:"type"`
-		To            string `json:"to"`
-		Subject       string `json:"subject"`
-		Body          string `json:"body"`
-		ApplicationID string `json:"applicationId"`
-		InterviewID   string `json:"interviewId"`
-		JobID         int64  `json:"jobId"`
-	}
-
 	// consumer loop
 	go func() {
 		for m := range msgs {
-
-			var cmd SendEmailCommand
-			if err := json.Unmarshal(m.Body, &cmd); err != nil {
-				log.Printf("[workerID=%s pod=%s] invalid message, sending to DLQ: %s (err: %v)", workerID, podName, string(m.Body), err)
-				m.Nack(false, false) // requeue = false → DLX → DLQ
-				continue
-			}
-
-			// simulating sending email
-			log.Printf("[workerID=%s pod=%s] NOTIFY ← to=%s subject=%s", workerID, podName, cmd.To, cmd.Subject)
-			time.Sleep(100 * time.Millisecond)
-
-			if err := m.Ack(false); err != nil {
-				log.Printf("[workerID=%s pod=%s] failed to ack message: %v", workerID, podName, err)
-			}
+			processDeliveryWithRetry(workerID, podName, &m)
 		}
 		log.Printf("[workerID=%s pod=%s] messages channel closed (connection/channel ended)", workerID, podName)
 		done <- struct{}{}
@@ -138,10 +125,89 @@ func main() {
 
 	select {
 	case sig := <-sigCh:
-		log.Printf("[workerID=%s pod=%s] received signal: %s (likely scale-down or rollout), shutting down…", workerID, podName, sig)
+		log.Printf("[workerID=%s pod=%s] received signal: %s (scale-down or rollout), shutting down…", workerID, podName, sig)
 	case <-done:
 		log.Printf("[workerID=%s pod=%s] consumer loop finished; shutting down…", workerID, podName)
 	}
 
 	log.Printf("[workerID=%s pod=%s] notifications worker shutdown complete.", workerID, podName)
+}
+
+// processDeliveryWithRetry parses the message and retries the handler with backoff
+func processDeliveryWithRetry(workerID, podName string, m *amqp091.Delivery) {
+	// parse json – if this fails, message is "poison" -> immediate dlq
+	var cmd SendEmailCommand
+	if err := json.Unmarshal(m.Body, &cmd); err != nil {
+		log.Printf(
+			"[workerID=%s pod=%s] invalid message, sending to DLQ (json error: %v): %s",
+			workerID, podName, err, string(m.Body),
+		)
+		_ = m.Nack(false, false) // requeue=false -> dlx -> dlq
+		return
+	}
+
+	// retry envelope around the actual handler
+	const maxAttempts = 3
+	backoff := []time.Duration{1 * time.Second, 3 * time.Second, 10 * time.Second}
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		err := handleSendEmailCommand(workerID, podName, &cmd)
+		if err == nil {
+			// success
+			if ackErr := m.Ack(false); ackErr != nil {
+				log.Printf("[workerID=%s pod=%s] failed to ack message: %v", workerID, podName, ackErr)
+			}
+			return
+		}
+
+		log.Printf(
+			"[workerID=%s pod=%s] handler failed (attempt %d/%d) for applicationId=%s: %v",
+			workerID, podName, attempt, maxAttempts, cmd.ApplicationID, err,
+		)
+
+		if attempt < maxAttempts {
+			sleep := backoff[attempt-1]
+			log.Printf(
+				"[workerID=%s pod=%s] backing off for %s before retrying applicationId=%s",
+				workerID, podName, sleep, cmd.ApplicationID,
+			)
+			time.Sleep(sleep)
+			continue
+		}
+
+		// all attempts failed -> dlq
+		log.Printf(
+			"[workerID=%s pod=%s] max attempts reached for applicationId=%s, sending to DLQ",
+			workerID, podName, cmd.ApplicationID,
+		)
+		_ = m.Nack(false, false)
+		return
+	}
+}
+
+var counter int32
+
+// handleSendEmailCommand is where you'd actually call an email provider.
+// for M2, we just simulate success/failure pattern.
+func handleSendEmailCommand(workerID, podName string, cmd *SendEmailCommand) error {
+	// faking issues
+	n := atomic.AddInt32(&counter, 1)
+	if n <= 2 {
+		return fmt.Errorf("simulated transient failure")
+	}
+	log.Printf("Now it works on attempt %d", n)
+
+	atomic.StoreInt32(&counter, 0)
+
+	// todo: plug your actual email sender here.
+	// for now, just log and pretend it succeeded.
+	log.Printf(
+		"[workerID=%s pod=%s] NOTIFY SendEmail to=%s subject=%q applicationId=%s",
+		workerID, podName, cmd.To, cmd.Subject, cmd.ApplicationID,
+	)
+
+	// to simulate transient failure for testing, you could temporarily:
+	// return fmt.Errorf("simulated transient failure")
+
+	return nil
 }
