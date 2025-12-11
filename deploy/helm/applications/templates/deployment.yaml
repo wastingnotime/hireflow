@@ -29,6 +29,16 @@ spec:
           - name: {{ $k }}
             value: "{{ $v }}"
           {{- end }}
+          - name: RabbitMQ
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.secretRefName }}
+                key: RabbitMQ
+          - name: APPLICATIONS_MONGO_CONNECTION_STRING
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.secretRefName }}
+                key: Mongo
         {{- if .Values.livenessProbe.enabled }}
         livenessProbe:
           httpGet:

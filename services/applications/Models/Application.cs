@@ -1,7 +1,7 @@
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
-namespace WastingNoTime.HireFlow.Candidates.Api.Models;
+namespace WastingNoTime.HireFlow.Applications.Models;
 
 public sealed class Application
 {
