@@ -3,12 +3,26 @@ image:
   tag: local
   pullPolicy: IfNotPresent
 
-replicaCount: 1   # KEDA later can set to 0..N
+replicaCount: 1   # initial, KEDA will override via HPA
+
+keda:
+  enabled: true
+  minReplicaCount: 0
+  maxReplicaCount: 5
+  pollingInterval: 5     # seconds between checks
+  cooldownPeriod: 30     # seconds to scale down after idle
+
+  rabbitmq:
+    queueName: notifications.commands  # queue name in RabbitMQ
+    queueLength: "10"                  # messages per replica target
+    hostFromEnv: RABBITMQ_CONNECTION_STRING
+    vhostName: /
+    protocol: amqp
+
 
 fullnameOverride: notifications
 
 env:
-  # e.g., OTEL vars if you add later
   WORKER_QUEUE: "notifications.commands"
 
 secretRefName: "hireflow-connections"
