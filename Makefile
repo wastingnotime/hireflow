@@ -30,12 +30,13 @@ IMAGE_SEARCH_API := $(REGISTRY)/$(SERVICE_SEARCH):$(IMAGE_TAG)
 IMAGE_IDENTITY_API := $(REGISTRY)/$(SERVICE_IDENTITY):$(IMAGE_TAG)
 IMAGE_NOTIFICATIONS := $(REGISTRY)/$(SERVICE_NOTIFICATIONS):$(IMAGE_TAG)
 
-.PHONY: build build-gateway build-company-jobs-api build-company-jobs-migrator build-candidates-api build-applications-api build-search-api build-identity-api build-notifications-api \
+.PHONY: build build-gateway build-company-jobs-api build-company-jobs-migrator build-candidates-api build-applications-api build-search-api build-identity-api build-notifications-worker \
         logs-company-jobs logs-gateway logs-candidates logs-notifications logs-applications logs-search logs-identity \
+		notifications-watch \
 		ingress-patch \
         test-happy-path
 
-build: build-gateway build-company-jobs-api build-company-jobs-migrator build-candidates-api build-applications-api build-search-api build-identity-api build-notifications-api
+build: build-gateway build-company-jobs-api build-company-jobs-migrator build-candidates-api build-applications-api build-search-api build-identity-api build-notifications-worker
 
 MINIKUBE_DOCKER_ENV := eval "$$(minikube docker-env)"
 
@@ -82,7 +83,7 @@ build-identity-api:
 	  -t $(IMAGE_IDENTITY_API) \
 	  ./services/$(SERVICE_IDENTITY)
 
-build-notifications-api:
+build-notifications-worker:
 	@$(MINIKUBE_DOCKER_ENV) && \
 	docker build \
 	  -t $(IMAGE_NOTIFICATIONS) \
@@ -129,6 +130,12 @@ ingress-patch: ## updates ingress to understand that host and forward accordingl
 test-happy-path: ## Run Milestone 1 happy path through the gateway
 	@test -x $(HAPPY_PATH_SCRIPT) || { echo "Missing or not executable: $(HAPPY_PATH_SCRIPT)"; exit 1; }
 	BASE_URL=$(GATEWAY_URL) RESUME_PATH=$(RESUME_PATH) bash $(HAPPY_PATH_SCRIPT)
+
+# ---------- Milestone 2:  ----------
+
+notifications-watch:
+	watch -n 2 "kubectl get deploy notifications -n hireflow; echo; kubectl get hpa -n hireflow"
+
 
 # -------------------------------------------
 # EF Core Migrations
@@ -332,12 +339,12 @@ helm-status-notifications:
 
 JOB_ID ?= 1
 COMPANY_ID ?= 1
-#RECRUITER_ID ?=1
 
 .PHONY: api-healthz \
 	api-jobs-create api-jobs-publish api-jobs-get \
 	api-companies-create api-companies-get api-companies-get-all \
-	api-recruiters-get-all api-recruiters-create
+	api-recruiters-get-all api-recruiters-create \
+	api-notifications-spike
 
 api-healthz:
 	curl -s $(GATEWAY_URL)/healthz && echo
@@ -379,6 +386,16 @@ api-recruiters-create:
 	curl -sS -X POST $(GATEWAY_URL)/companies/$(COMPANY_ID)/recruiters \
 		-H "Content-Type: application/json" \
 		-d '{"companyId":$(COMPANY_ID),"name": "Henrique Riccio", "email":"hriccio@wastingnotime.org"}' | jq
+
+api-notifications-spike:
+	@for i in $$(seq 1 100); do \
+		curl -s -X POST "$(GATEWAY_URL)/applications/$(APPLICATION_ID)/interviews" \
+			-H "Content-Type: application/json" \
+			-d '{"scheduledAtUtc":"2025-12-13T15:00:00Z","durationMinutes":60,"location":"Google Meet"}' \
+			> /dev/null; \
+	done; \
+	echo "Sent 100 notifications"
+
 
 # -------------------------------------------
 # MongoDB shell (hireflow namespace)

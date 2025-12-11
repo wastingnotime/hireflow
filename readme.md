@@ -104,9 +104,9 @@ That is an MVP but to allow it to be easy understandable and manageable we split
     * Services: Identity, Company&Jobs, Candidates, Applications, Search, Notifications, Gateway.
     * Infra: kubernetes, RabbitMQ, SQL Server, Mongo, Redis, Blob.
     * CI/CD: build → test → Helm deploy → smoke tests.
-* Milestone 1 — “Happy path” **<---- "WE ARE HERE"**
+* Milestone 1 — “Happy path”
     * Create company & recruiter → publish job → candidate applies (resume upload) → screening score → move to interview → schedule slot → send email.
-* Milestone 2 — Scale & resiliency
+* Milestone 2 — Scale & resiliency **<---- "WE ARE HERE"**
     * KEDA scaling on queue depth; circuit breaker on Search; outbox pattern for Applications → Messaging; retries + DLQ viewer.
 * Milestone 3 — Observability & security
     * Trace a request across gateway→apps→workers in Jaeger.
@@ -122,66 +122,14 @@ Suggestion for the braves: if you think that makes sense, after taking note of y
 
 ### important
 
-start from [bootable-skeleton](https://github.com/wastingnotime/hireflow/tree/v0.1.0-m0-bootable-skeleton)  
-this documentation is complementar
+sequence of releases:
+M0 - [bootable-skeleton](https://github.com/wastingnotime/hireflow/tree/v0.1.0-m0-bootable-skeleton)
+M1 - [happy-path](https://github.com/wastingnotime/hireflow/tree/v0.2.0-m1-happy-path)
+if you are just starting, start from M0
+because all doc is just complementar
 
-### milestone 1  - happy flow
 
-```mermaid
-flowchart LR
-  subgraph Candidate Side
-    C[Candidate\napply + upload resume]
-  end
-
-  subgraph Gateway/Ingress
-    G[API Gateway]
-  end
-
-  subgraph Core Services
-    CO[Company Svc]
-    R[Recruiter Svc]
-    J[Job Svc]
-    Can[Candidate Svc]
-    A[Application Svc]
-    S[Screening Svc]
-    I[Interview Svc]
-    N[Notification Svc]
-  end
-
-  subgraph Infra
-    DB[(PostgreSQL)]
-    OBJ[(MinIO/S3\nresumes/attachments)]
-    Q[(Event Bus\nNATS/RabbitMQ)]
-    SMTP[(SMTP Mock\nMailHog)]
-  end
-
-  C -->|HTTP| G
-  G --> CO
-  G --> R
-  G --> J
-  G --> Can
-  G --> A
-  G --> S
-  G --> I
-  G --> N
-
-  CO --- DB
-  R --- DB
-  J --- DB
-  Can --- DB
-  A --- DB
-  S --- DB
-  I --- DB
-  N --- DB
-
-  A -->|multipart upload| OBJ
-  S -->|sync score or event| A
-  A -->|stage=interview -> event| Q
-  Q --> I
-  I -->|schedule| DB
-  N -->|SMTP| SMTP
-```
-
+### milestone 2  - scale & resiliency
 
 ### pre-requirements
 
@@ -207,36 +155,32 @@ verify cluster
 kubectl get po -A
 ```
 
-#### update secrets (passwords, connection-strings, etc)
+#### install keda
 
 update secrects
 ```bash
-kubectl -n hireflow create secret generic hireflow-connections \
-  --from-literal=SqlServer='Server=mssql.hireflow.svc.cluster.local,1433;Database=hireflow;User ID=sa;Password=P@ssw0rd12345!;TrustServerCertificate=True' \
-  --from-literal=RabbitMQ='amqp://hireflow:hireflowpass@mq-rabbitmq.hireflow.svc.cluster.local:5672/' \
-  --from-literal=Mongo='mongodb://root:hireflowmongo@mongo-mongodb-0.mongo-mongodb-headless.hireflow.svc.cluster.local:27017/?replicaSet=rs0' \
-  --from-literal=JwtSigningKey='dev_hmac_super_secret_change_me' \
-  --dry-run=client -o yaml | kubectl apply -f -
+kubectl create namespace keda
+
+helm repo add kedacore https://kedacore.github.io/charts
+helm repo update
+
+helm install keda kedacore/keda -n keda
 ```
 
-
-#### update application services
+#### update only worker
 
 build and deploy the services
 ```bash
-# build each app
-make build
+# build
+make build-notifications-worker
 
-# build update helm definitions (chart of company has changed)
-make helm-update
+# build update helm definitions (just in case)
+make helm-helm-update-notifications
 
 # deploy them on the cluster
-make helm-deploy
+make helm-deploy-notifications 
 
-# call ingress patch after every gateway upgrade (todo: add to helm-deploy flow)
-make ingress-patch
 ```
-
 
 verify if all the pods
 ```bash
@@ -248,80 +192,15 @@ test
 make test-happy-path
 ```
 
+test keda
+```bash
+# use a valid application id (can be taken from test-happy-path execution)
+export APPLICATION_ID=693aec78a053e93c8dbf1a64 && make api-notifications-spike 
+```
+
 
 
 ## behind the scenes (just recording some steps used during preparation)
-
-### happy path - what need to be done
-
-migration tools dependency
-```
-dotnet tool update --global dotnet-ef
-dotnet tool install --global dotnet-ef --version 9.0.11
-```
-
-create the first migration
-```
-export COMPANYJOBS_CONNECTION_STRING='Server=mssql.hireflow.svc.cluster.local,1433;Database=hireflow;User ID=sa;Password=P@ssw0rd12345!;TrustServerCertificate=True'
-
-dotnet ef migrations add InitialCreate \
-  --project services/company-jobs/WastingNoTime.HireFlow.CompanyJobs.Data \
-  --startup-project services/company-jobs/WastingNoTime.HireFlow.CompanyJobs.Migrator
-```
-
-check database
-```
-kubectl -n hireflow exec -it deploy/mssql -- bash
-
-
-/opt/mssql-tools18/bin/sqlcmd \
-  -S localhost \
-  -U sa \
-  -P 'P@ssw0rd12345!' \
-  -d hireflow \
-  -C
-
-
-SELECT * FROM companyjobs.__EFMigrationsHistory;
-GO
-
-SELECT Id, CompanyId, Title, Status FROM companyjobs.jobs;
-GO
-```
-
-second migration
-```bash
-make migrations-add NAME=AddRecruiters COMPANYJOBS_CONNECTION_STRING='Server=mssql.hireflow.svc.cluster.local,1433;Database=hireflow;User ID=sa;Password=P@ssw0rd12345!;TrustServerCertificate=True'
-```
-
-
-#### quick test 
-a lot of targets on make file, or run the full test
-
-#### check nosql
-
-connect to container
-```bash
-kubectl -n hireflow exec -it mongo-mongodb-0 -- bash
-```
-
-access database
-```bash
-mongosh -u root -p hireflowmongo
-```
-
-query
-```mongo
-use hireflow_candidates
-
-db.applications.find().pretty()
-```
-
-to allow access from host (basic foward)
-```bash
-kubectl -n hireflow port-forward svc/mongo-mongodb 27017:27017
-```
-
 
 #### troubleshooting
 
@@ -350,4 +229,32 @@ kubectl describe pod  gateway-68fc54c6fc-w874c -n hireflow
 check logs of a specif application (label)
 ```bash
 kubectl -n hireflow logs -l app.kubernetes.io/name=notifications
+```
+
+check templates
+```bash
+# rendered template
+helm template notifications deploy/helm/notifications -n hireflow
+
+# applied template
+helm get manifest notifications -n hireflow
+
+# test deploy
+helm upgrade --install notifications deploy/helm/notifications -n hireflow \
+  --dry-run --debug
+```
+
+check keda
+```bash
+kubectl get pods -n keda
+kubectl get hpa -n hireflow
+```
+
+other verifications
+```bash
+kubectl -n hireflow logs notifications-8456f9c559-v8q7f --previous
+kubectl -n hireflow get rs | grep notifications
+kubectl -n hireflow describe rs notifications-8456f9c559
+kubectl -n hireflow describe deploy notifications
+kubectl -n hireflow get events --sort-by=.lastTimestamp | grep -i notif
 ```

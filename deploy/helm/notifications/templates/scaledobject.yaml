@@ -1,0 +1,23 @@
+{{- if .Values.keda.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "hf.fullname" . }}-keda
+  labels:
+    {{- include "hf.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "hf.fullname" . }}   # deployment name
+  minReplicaCount: {{ .Values.keda.minReplicaCount | default 0 }}
+  maxReplicaCount: {{ .Values.keda.maxReplicaCount | default 5 }}
+  pollingInterval: {{ .Values.keda.pollingInterval | default 5 }}
+  cooldownPeriod: {{ .Values.keda.cooldownPeriod | default 30 }}
+  triggers:
+    - type: rabbitmq
+      metadata:
+        queueName: {{ .Values.keda.rabbitmq.queueName | quote }}
+        queueLength: {{ .Values.keda.rabbitmq.queueLength | quote }}
+        hostFromEnv: {{ .Values.keda.rabbitmq.hostFromEnv | quote }}
+        vhostName: {{ .Values.keda.rabbitmq.vhostName | default "/" | quote }}
+        protocol: {{ .Values.keda.rabbitmq.protocol | default "amqp" | quote }}
+{{- end }}
