@@ -8,7 +8,10 @@ public sealed class RabbitMqNotificationsCommandBus : INotificationsCommandBus
 {
     private readonly IConnection _connection;
     private readonly IModel _channel;
-    private readonly string _queueName = "notifications.commands";
+
+    private const string MainQueue = "notifications.commands";
+    private const string DlxExchange = "hireflow.dlx";
+    private const string DlqQueue = "notifications.commands.dlq";
 
     public RabbitMqNotificationsCommandBus(string connectionString)
     {
@@ -20,13 +23,45 @@ public sealed class RabbitMqNotificationsCommandBus : INotificationsCommandBus
         _connection = factory.CreateConnection("candidates-notifications-publisher");
         _channel = _connection.CreateModel();
 
-        // ensure queue exists (durable, not auto-deleted)
-        _channel.QueueDeclare(
-            queue: _queueName,
+        EnsureTopology(_channel);
+    }
+
+    private static void EnsureTopology(IModel channel)
+    {
+        // shared dlx for all dead-lettered messages
+        channel.ExchangeDeclare(
+            exchange: DlxExchange,
+            type: ExchangeType.Direct,
+            durable: true,
+            autoDelete: false,
+            arguments: null);
+
+        // dlq bound to dlx
+        channel.QueueDeclare(
+            queue: DlqQueue,
             durable: true,
             exclusive: false,
             autoDelete: false,
             arguments: null);
+
+        channel.QueueBind(
+            queue: DlqQueue,
+            exchange: DlxExchange,
+            routingKey: DlqQueue);
+
+        // main queue with dlq config
+        var mainQueueArgs = new Dictionary<string, object>
+        {
+            ["x-dead-letter-exchange"] = DlxExchange,
+            ["x-dead-letter-routing-key"] = DlqQueue
+        };
+
+        channel.QueueDeclare(
+            queue: MainQueue,
+            durable: true,
+            exclusive: false,
+            autoDelete: false,
+            arguments: mainQueueArgs);
     }
 
     public Task PublishSendEmailAsync(
@@ -56,8 +91,8 @@ public sealed class RabbitMqNotificationsCommandBus : INotificationsCommandBus
         props.DeliveryMode = 2; // persistent
 
         _channel.BasicPublish(
-            exchange: "",
-            routingKey: _queueName,
+            exchange: "",                 // default exchange
+            routingKey: MainQueue,        // notifications.commands
             basicProperties: props,
             body: bytes);
 

@@ -415,5 +415,25 @@ mongo-port-forward:
 	kubectl -n $(NAMESPACE) port-forward svc/mongo-mongodb 27017:27017
 
 
+# -------------------------------------------
+# RabbitMQ shell (hireflow namespace)
+# -------------------------------------------
+
+.PHONY: rabbitmq-port-forward rabbitmq-list-queues rabbitmq-send-broken-message rabbitmq-send-via-curl
+
+rabbitmq-port-forward:
+	kubectl -n hireflow port-forward svc/mq-rabbitmq 15672:15672
+
+rabbitmq-list-queues:
+	kubectl -n hireflow exec -it mq-rabbitmq-0 -- \
+		rabbitmqctl list_queues name messages
+
+rabbitmq-send-message:
+	curl -u hireflow:hireflowpass -H "content-type:application/json" -X POST -d'{"properties":{"delivery_mode":2},"routing_key":"notifications.commands","payload":"{\"type\":\"SendEmail\",\"to\":\"someone\", \"message\":\"hello-from-M2\"}","payload_encoding":"string"}' http://localhost:15672/api/exchanges/%2f/amq.default/publish
+
+rabbitmq-send-broken-message:
+	curl -u hireflow:hireflowpass -H "content-type:application/json" -X POST -d'{"properties":{"delivery_mode":2},"routing_key":"notifications.commands","payload":"non_json_msg","payload_encoding":"string"}' http://localhost:15672/api/exchanges/%2f/amq.default/publish
+
+
 ## TODO: diagnose
 # helm template company-jobs deploy/helm/company-jobs -n hireflow

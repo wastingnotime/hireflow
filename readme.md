@@ -192,12 +192,37 @@ test
 make test-happy-path
 ```
 
+#### test scalling in/out
+
 test keda
 ```bash
 # use a valid application id (can be taken from test-happy-path execution)
 export APPLICATION_ID=693aec78a053e93c8dbf1a64 && make api-notifications-spike 
 ```
 
+#### test dlq
+
+terminal 1 - open ports to rabbitmq - to allow send messages
+```bash
+make rabbitmq-port-forward
+```
+
+terminal 2 - logs consumer
+```bash
+make make logs-notifications
+```
+
+open to rabbitmq
+```bash
+# verify queues
+make rabbitmq-list-queues
+# send ok message
+make rabbitmq-send-message
+# send trash message
+make rabbitmq-send-broken-message
+# verify queues
+make rabbitmq-list-queues
+```
 
 
 ## behind the scenes (just recording some steps used during preparation)
@@ -257,4 +282,10 @@ kubectl -n hireflow get rs | grep notifications
 kubectl -n hireflow describe rs notifications-8456f9c559
 kubectl -n hireflow describe deploy notifications
 kubectl -n hireflow get events --sort-by=.lastTimestamp | grep -i notif
+```
+
+rabbit maintenance
+```bash
+kubectl -n hireflow exec -it mq-rabbitmq-0 -- \
+  rabbitmqctl delete_queue notifications.commands
 ```
