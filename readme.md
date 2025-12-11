@@ -212,7 +212,7 @@ terminal 2 - logs consumer
 make make logs-notifications
 ```
 
-open to rabbitmq
+send messages
 ```bash
 # verify queues
 make rabbitmq-list-queues
@@ -223,6 +223,25 @@ make rabbitmq-send-broken-message
 # verify queues
 make rabbitmq-list-queues
 ```
+
+#### test retry/backoff
+
+terminal 1 - open ports to rabbitmq - to allow send messages
+```bash
+make rabbitmq-port-forward
+```
+
+terminal 2 - logs consumer
+```bash
+make make logs-notifications
+```
+
+send messages
+```bash
+# send ok message
+make rabbitmq-send-message
+```
+
 
 
 ## behind the scenes (just recording some steps used during preparation)
