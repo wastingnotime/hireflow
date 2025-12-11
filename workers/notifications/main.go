@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"log"
 	"os"
 	"os/signal"
@@ -58,14 +59,17 @@ func main() {
 		log.Printf("[workerID=%s pod=%s] RabbitMQ channel closed", workerID, podName)
 	}()
 
-	// ensure queue exists
+	// publisher is the real owner, but to avoid create a more complex control lets do an idempotent declare
 	_, err = ch.QueueDeclare(
 		queueName,
 		true,  // durable
 		false, // autoDelete
 		false, // exclusive
 		false, // noWait
-		nil,   // args
+		amqp091.Table{
+			"x-dead-letter-exchange":    "hireflow.dlx",
+			"x-dead-letter-routing-key": queueName + ".dlq",
+		},
 	)
 	if err != nil {
 		log.Fatalf("[workerID=%s pod=%s] failed to declare queue %q: %v", workerID, podName, queueName, err)
@@ -94,15 +98,35 @@ func main() {
 	// channel to signal that the consumer loop stopped
 	done := make(chan struct{}, 1)
 
+	//todo: put on file start
+	type SendEmailCommand struct {
+		Type          string `json:"type"`
+		To            string `json:"to"`
+		Subject       string `json:"subject"`
+		Body          string `json:"body"`
+		ApplicationID string `json:"applicationId"`
+		InterviewID   string `json:"interviewId"`
+		JobID         int64  `json:"jobId"`
+	}
+
 	// consumer loop
 	go func() {
 		for m := range msgs {
-			log.Printf("[workerID=%s pod=%s] NOTIFY ← %s", workerID, podName, string(m.Body))
+
+			var cmd SendEmailCommand
+			if err := json.Unmarshal(m.Body, &cmd); err != nil {
+				log.Printf("[workerID=%s pod=%s] invalid message, sending to DLQ: %s (err: %v)", workerID, podName, string(m.Body), err)
+				m.Nack(false, false) // requeue = false → DLX → DLQ
+				continue
+			}
+
+			// simulating sending email
+			log.Printf("[workerID=%s pod=%s] NOTIFY ← to=%s subject=%s", workerID, podName, cmd.To, cmd.Subject)
+			time.Sleep(100 * time.Millisecond)
+
 			if err := m.Ack(false); err != nil {
 				log.Printf("[workerID=%s pod=%s] failed to ack message: %v", workerID, podName, err)
 			}
-			// simulating some delay
-			time.Sleep(500 * time.Millisecond)
 		}
 		log.Printf("[workerID=%s pod=%s] messages channel closed (connection/channel ended)", workerID, podName)
 		done <- struct{}{}
