@@ -22,4 +22,8 @@ public sealed class ApplicationsDb
 
     public IMongoCollection<Interview> Interviews =>
         _db.GetCollection<Interview>("interviews");
+    
+    public IMongoCollection<OutboxMessage> OutboxMessages =>
+        _db.GetCollection<OutboxMessage>("outbox_messages");
+
 }
