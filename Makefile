@@ -211,7 +211,8 @@ helm-deploy-gateway:
 helm-deploy-company-jobs:
 	@$(MINIKUBE_DOCKER_ENV) && \
 	helm upgrade --install $(RELEASE_COMPANY_JOBS) $(CHART_COMPANY_JOBS) -n $(NAMESPACE) \
-		--set image.tag=${IMAGE_TAG}
+		--set image.tag=${IMAGE_TAG} \
+		--set migrator.image.tag=${IMAGE_TAG}
 
 helm-deploy-candidates:
 	@$(MINIKUBE_DOCKER_ENV) && \

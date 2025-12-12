@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpLogging;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -8,6 +9,7 @@ using WastingNoTime.HireFlow.Applications.Data;
 using WastingNoTime.HireFlow.Applications.HealthCheck;
 using WastingNoTime.HireFlow.Applications.Messaging;
 using WastingNoTime.HireFlow.Applications.Models;
+using WastingNoTime.HireFlow.Applications.Outbox;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -30,7 +32,9 @@ builder.Services.AddSingleton(_ => new ConnectionFactory
 {
     Uri = new Uri(rabbitConnectionString)
 });
-builder.Services.AddSingleton<INotificationsCommandBus>(_ => new RabbitMqNotificationsCommandBus(rabbitConnectionString));
+builder.Services.AddSingleton<INotificationsCommandBus>(_ =>
+    new RabbitMqNotificationsCommandBus(rabbitConnectionString));
+builder.Services.AddHostedService<ApplicationsOutboxDispatcher>();
 
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => HealthCheckResult.Healthy())
@@ -224,17 +228,17 @@ app.MapPost("/applications/{id}/interviews", async (
     string id,
     ScheduleInterviewRequest req,
     ApplicationsDb db,
-    INotificationsCommandBus notificationsBus,
+    IMongoClient mongoClient,
     CancellationToken ct) =>
 {
-    // 1) Load application
+    // load application
     var appFilter = Builders<Application>.Filter.Eq(x => x.Id, id);
     var appDoc = await db.Applications.Find(appFilter).FirstOrDefaultAsync(ct);
 
     if (appDoc is null)
         return Results.NotFound(new { error = "Application not found." });
 
-    // 2) Create interview document
+    // create interview document
     var now = DateTime.UtcNow;
 
     var interview = new Interview
@@ -249,43 +253,78 @@ app.MapPost("/applications/{id}/interviews", async (
         Status = "scheduled",
         CreatedAtUtc = now
     };
-
-    await db.Interviews.InsertOneAsync(interview, cancellationToken: ct);
-
-    // 3) Move application status to "interview"
-    appDoc.Status = "interview";
-    await db.Applications.ReplaceOneAsync(
-        Builders<Application>.Filter.Eq(x => x.Id, appDoc.Id),
-        appDoc,
-        cancellationToken: ct
-    );
-
-    // 4) Publish email command to RabbitMQ
-    var subject = $"Interview scheduled for Job {interview.JobId}";
-    var body =
-        $"Hi {appDoc.CandidateName},\n\n" +
-        $"Your interview has been scheduled.\n\n" +
-        $"Date/Time (UTC): {interview.ScheduledAtUtc:yyyy-MM-dd HH:mm}\n" +
-        $"Duration: {interview.DurationMinutes} minutes\n" +
-        $"Location: {interview.Location}\n\n" +
-        $"Thank you,\nHireflow";
+  
+   // transaction: interview + application status + outbox
+    // only works on replicaset, without it, we need to do "compensation script"
+    // we accepted because we are targeting production env
+    using var session = await mongoClient.StartSessionAsync(cancellationToken: ct);
 
     try
     {
-        await notificationsBus.PublishSendEmailAsync(
-            to: appDoc.CandidateEmail,
-            subject: subject,
-            body: body,
-            applicationId: appDoc.Id,
-            interviewId: interview.Id,
-            jobId: interview.JobId,
-            ct: ct);
+        session.StartTransaction();
+
+        // insert interview
+        await db.Interviews.InsertOneAsync(session, interview, cancellationToken: ct);
+        
+        // preparing email command to outbox
+        var subject = $"Interview scheduled for Job {interview.JobId}";
+        var body =
+            $"Hi {appDoc.CandidateName},\n\n" +
+            $"Your interview has been scheduled.\n\n" +
+            $"Date/Time (UTC): {interview.ScheduledAtUtc:yyyy-MM-dd HH:mm}\n" +
+            $"Duration: {interview.DurationMinutes} minutes\n" +
+            $"Location: {interview.Location}\n\n" +
+            $"Thank you,\nHireflow";
+
+        // construct outbox message
+        var outbox = new OutboxMessage
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            OccurredAtUtc = now,
+            Type = "SendEmail.InterviewScheduled",
+            PayloadJson = JsonSerializer.Serialize(new
+            {
+                type = "SendEmail",
+                to = appDoc.CandidateEmail,
+                subject,
+                body,
+                applicationId = appDoc.Id,
+                interviewId = interview.Id,
+                jobId = interview.JobId
+            }),
+            Status = "Pending",
+            RetryCount = 0,
+            NextAttemptAtUtc = now
+        };    
+
+        // update application status
+        var update = Builders<Application>.Update.Set(x => x.Status, "interview");
+        await db.Applications.UpdateOneAsync(
+            session,
+            Builders<Application>.Filter.Eq(x => x.Id, appDoc.Id),
+            update,
+            cancellationToken: ct);
+
+        // insert outbox message
+        await db.OutboxMessages.InsertOneAsync(session, outbox, cancellationToken: ct);
+
+        await session.CommitTransactionAsync(ct);
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"[WARN] Failed to publish email command for application {appDoc.Id}: {ex.Message}");
-        // we don't fail the scheduling itself for M1
+        try
+        {
+            await session.AbortTransactionAsync(ct);
+        }
+        catch
+        {
+            /* ignore */
+        }
+
+        Console.WriteLine($"[ERROR] schedule interview failed for application {id}: {ex.Message}");
+        return Results.Problem("Failed to schedule interview.");
     }
+
 
     var response = new InterviewResponse(
         interview.Id,
@@ -361,6 +400,78 @@ app.MapGet("/interviews/{id}", async (
 
     return Results.Ok(response);
 });
+
+// GET /outbox?status=Pending&limit=50
+app.MapGet("/outbox", async (
+    string? status,
+    int? limit,
+    ApplicationsDb db,
+    CancellationToken ct) =>
+{
+    var take = Math.Clamp(limit ?? 50, 1, 200);
+
+    FilterDefinition<OutboxMessage> filter = FilterDefinition<OutboxMessage>.Empty;
+
+    if (!string.IsNullOrWhiteSpace(status))
+    {
+        filter = Builders<OutboxMessage>.Filter.Eq(x => x.Status, status);
+    }
+
+    var items = await db.OutboxMessages
+        .Find(filter)
+        .SortByDescending(x => x.OccurredAtUtc)
+        .Limit(take)
+        .ToListAsync(ct);
+
+    // return a smaller shape (payload can be huge)
+    var response = items.Select(x => new
+    {
+        x.Id,
+        x.Type,
+        x.Status,
+        x.RetryCount,
+        x.OccurredAtUtc,
+        x.NextAttemptAtUtc,
+        x.ProcessingStartedAtUtc,
+        x.ProcessedAtUtc,
+        x.LockedBy,
+        x.LastError
+    });
+
+    return Results.Ok(response);
+});
+
+// GET /outbox/{id}
+app.MapGet("/outbox/{id}", async (
+    string id,
+    ApplicationsDb db,
+    CancellationToken ct) =>
+{
+    var item = await db.OutboxMessages
+        .Find(Builders<OutboxMessage>.Filter.Eq(x => x.Id, id))
+        .FirstOrDefaultAsync(ct);
+
+    return item is null ? Results.NotFound() : Results.Ok(item);
+});
+
+// GET /outbox/summary
+app.MapGet("/outbox/summary", async (ApplicationsDb db, CancellationToken ct) =>
+{
+    var statuses = new[] { "Pending", "Processing", "Processed", "Failed" };
+
+    var tasks = statuses.Select(async s =>
+    {
+        var count = await db.OutboxMessages.CountDocumentsAsync(
+            Builders<OutboxMessage>.Filter.Eq(x => x.Status, s),
+            cancellationToken: ct);
+
+        return new { status = s, count };
+    });
+
+    var results = await Task.WhenAll(tasks);
+    return Results.Ok(results);
+});
+
 
 // Liveness – just says "process is running"
 app.MapHealthChecks("/healthz", new HealthCheckOptions

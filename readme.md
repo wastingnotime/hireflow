@@ -178,7 +178,7 @@ make build-notifications-worker
 make helm-helm-update-notifications
 
 # deploy them on the cluster
-make helm-deploy-notifications 
+make helm-deploy-notifications
 
 ```
 
@@ -197,7 +197,7 @@ make test-happy-path
 test keda
 ```bash
 # use a valid application id (can be taken from test-happy-path execution)
-export APPLICATION_ID=693aec78a053e93c8dbf1a64 && make api-notifications-spike 
+export APPLICATION_ID=693aec78a053e93c8dbf1a64 && make api-notifications-spike
 ```
 
 #### test dlq
