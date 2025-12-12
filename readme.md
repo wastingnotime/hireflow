@@ -242,7 +242,40 @@ send messages
 make rabbitmq-send-message
 ```
 
+#### test outbox message pattern
 
+```bash
+# stop rabbitmq
+kubectl -n hireflow scale statefulset.apps/mq-rabbitmq   --replicas=0
+
+# look at outbox collection
+make mongo-shell
+# use hireflow_applications
+# db.outbox_messages.find().pretty()
+
+# start rabbitmq
+kubectl -n hireflow scale statefulset.apps/mq-rabbitmq   --replicas=1
+
+# look at outbox collection
+make mongo-shell
+# use hireflow_applications
+# db.outbox_messages.find().pretty()
+
+```
+
+#### test ef core resilience
+
+```bash
+# stop mssql
+kubectl -n hireflow scale deployments/mssql --replicas=0
+# view readness
+kubectl -n hireflow get pods -w
+
+# start mssql
+kubectl -n hireflow scale deployments/mssql --replicas=1
+# view readness
+kubectl -n hireflow get pods -w
+```
 
 ## behind the scenes (just recording some steps used during preparation)
 

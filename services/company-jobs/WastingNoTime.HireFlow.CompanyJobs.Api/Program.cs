@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.HttpLogging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using WastingNoTime.HireFlow.CompanyJobs.Api.Endpoints;
-using WastingNoTime.HireFlow.CompanyJobs.Api.HealthCheck;
 using WastingNoTime.HireFlow.CompanyJobs.Data;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -18,10 +17,25 @@ var dbConnectionString =
 
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => HealthCheckResult.Healthy())
-    .AddCheck("sql", new SqlConnectionHealthCheck(dbConnectionString));;
+    .AddSqlServer(
+        connectionString: dbConnectionString,
+        name: "sql",
+        failureStatus: HealthStatus.Unhealthy,
+        timeout: TimeSpan.FromSeconds(3));
+
 
 builder.Services.AddDbContext<CompanyJobsDbContext>(opt =>
-    opt.UseSqlServer(dbConnectionString, sql => { sql.MigrationsHistoryTable("__EFMigrationsHistory", "companyjobs"); }));
+    opt.UseSqlServer(dbConnectionString, sql =>
+    {
+        sql.EnableRetryOnFailure(
+            maxRetryCount: 5,
+            maxRetryDelay: TimeSpan.FromSeconds(10),
+            errorNumbersToAdd: null);
+
+        sql.CommandTimeout(30);
+        
+        sql.MigrationsHistoryTable("__EFMigrationsHistory", "companyjobs");
+    }));
 
 builder.Services.ConfigureHttpJsonOptions(opt =>
 {
