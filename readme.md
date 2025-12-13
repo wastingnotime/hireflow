@@ -192,6 +192,29 @@ test
 make test-happy-path
 ```
 
+
+#### opentelemetry
+
+install and access
+```bash
+#create new namespace
+kubectl create namespace observability
+
+#install jaeger
+  kubectl -n observability apply -f deploy/infra/jaeger.yaml
+
+#verify
+kubectl get pods -n observability
+
+#forward jaeger ui
+kubectl port-forward -n observability svc/jaeger-query 16686:16686
+```
+
+access on http://localhost:16686
+
+
+### some tests could be done
+
 #### test scalling in/out
 
 test keda

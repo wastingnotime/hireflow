@@ -2,6 +2,9 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpLogging;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using MongoDB.Driver;
+using OpenTelemetry.Exporter;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using RabbitMQ.Client;
 using WastingNoTime.HireFlow.Candidates.Api.HealthCheck;
 
@@ -31,19 +34,35 @@ builder.Services.AddHealthChecks()
     .AddCheck<MongoHealthCheck>("mongo")
     .AddCheck<RabbitMqHealthCheck>("rabbitmq");
 
-builder.Services.AddHttpLogging(logging =>
-{
-    logging.LoggingFields = HttpLoggingFields.All;
-    logging.RequestBodyLogLimit = 0; // we don't log resume bodies
-    logging.ResponseBodyLogLimit = 4096;
-});
+//todo: handle absence -> argmentnull exception
+// var otlpEndpoint =
+//     Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT") ??
+//     builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"] ??
+//     "http://jaeger-collector.observability.svc.cluster.local:4318";
+
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing =>
+    {
+        tracing
+            .AddAspNetCoreInstrumentation(o =>
+            {
+                // lets ignore noise
+                o.Filter = ctx =>
+                {
+                    var p = ctx.Request.Path.Value ?? "";
+                    return p != "/healthz" && p != "/ready";
+                };
+            })
+            .AddHttpClientInstrumentation()
+            .AddOtlpExporter();
+    });
+
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-app.UseHttpLogging();
 
 if (app.Environment.IsDevelopment())
 {

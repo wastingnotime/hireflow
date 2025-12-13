@@ -15,6 +15,15 @@ service:
 env:
   ASPNETCORE_URLS: "http://0.0.0.0:8080"
   CANDIDATES_MONGO_DB: "hireflow_candidates"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger-collector.observability.svc.cluster.local:4317"
+  OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+  OTEL_EXPORTER_OTLP_INSECURE: "true"
+  OTEL_SERVICE_NAME: "candidates"
+  OTEL_TRACES_EXPORTER: "otlp"
+  OTEL_TRACES_SAMPLER: "always_on"
+  OTEL_METRICS_EXPORTER: "none"
+  OTEL_LOGS_EXPORTER: "none"
+  OTEL_LOG_LEVEL: "debug"
 
 secretRefName: "hireflow-connections"
 

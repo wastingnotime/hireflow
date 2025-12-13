@@ -1,8 +1,8 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.AspNetCore.HttpLogging;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using MongoDB.Driver;
+using OpenTelemetry.Trace;
 using RabbitMQ.Client;
 using WastingNoTime.HireFlow.Applications.Contracts;
 using WastingNoTime.HireFlow.Applications.Data;
@@ -41,19 +41,33 @@ builder.Services.AddHealthChecks()
     .AddCheck<MongoHealthCheck>("mongo")
     .AddCheck<RabbitMqHealthCheck>("rabbitmq");
 
-builder.Services.AddHttpLogging(logging =>
-{
-    logging.LoggingFields = HttpLoggingFields.All;
-    logging.RequestBodyLogLimit = 0; // we don't log resume bodies
-    logging.ResponseBodyLogLimit = 4096;
-});
+//todo: handle absence -> argmentnull exception
+// var otlpEndpoint =
+//     Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT") ??
+//     builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"] ??
+//     "http://jaeger-collector.observability.svc.cluster.local:4318";
+
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing =>
+    {
+        tracing
+            .AddAspNetCoreInstrumentation(o =>
+            {
+                // lets ignore noise
+                o.Filter = ctx =>
+                {
+                    var p = ctx.Request.Path.Value ?? "";
+                    return p != "/healthz" && p != "/ready";
+                };
+            })
+            .AddHttpClientInstrumentation()
+            .AddOtlpExporter();
+    });
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
-
-app.UseHttpLogging();
 
 if (app.Environment.IsDevelopment())
 {
@@ -64,6 +78,18 @@ if (app.Environment.IsDevelopment())
 app.UseRouting();
 
 // ---------- Endpoints ----------
+
+// kept only for validation purposes
+var tracer = TracerProvider.Default.GetTracer("applications.manual");
+
+app.MapGet("/applications/trace-ping", () =>
+{
+    using var span = tracer.StartActiveSpan("applications.trace-ping");
+    span.SetAttribute("demo", true);
+    return Results.Ok(new { ok = true });
+});
+
+
 
 // POST /applications : candidate applies with resume
 app.MapPost("/applications", async (
@@ -253,8 +279,8 @@ app.MapPost("/applications/{id}/interviews", async (
         Status = "scheduled",
         CreatedAtUtc = now
     };
-  
-   // transaction: interview + application status + outbox
+
+    // transaction: interview + application status + outbox
     // only works on replicaset, without it, we need to do "compensation script"
     // we accepted because we are targeting production env
     using var session = await mongoClient.StartSessionAsync(cancellationToken: ct);
@@ -265,7 +291,7 @@ app.MapPost("/applications/{id}/interviews", async (
 
         // insert interview
         await db.Interviews.InsertOneAsync(session, interview, cancellationToken: ct);
-        
+
         // preparing email command to outbox
         var subject = $"Interview scheduled for Job {interview.JobId}";
         var body =
@@ -295,7 +321,7 @@ app.MapPost("/applications/{id}/interviews", async (
             Status = "Pending",
             RetryCount = 0,
             NextAttemptAtUtc = now
-        };    
+        };
 
         // update application status
         var update = Builders<Application>.Update.Set(x => x.Status, "interview");
