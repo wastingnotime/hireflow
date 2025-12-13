@@ -1,8 +1,8 @@
 using System.Text.Json;
 using MongoDB.Driver;
 using WastingNoTime.HireFlow.Applications.Data;
-using WastingNoTime.HireFlow.Applications.Models;
 using WastingNoTime.HireFlow.Applications.Messaging;
+using WastingNoTime.HireFlow.Applications.Models;
 
 namespace WastingNoTime.HireFlow.Applications.Outbox;
 

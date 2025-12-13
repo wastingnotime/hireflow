@@ -397,6 +397,9 @@ api-notifications-spike:
 	done; \
 	echo "Sent 100 notifications"
 
+api-applications-trace:
+	curl $(GATEWAY_URL)/applications/trace-ping
+
 
 # -------------------------------------------
 # MongoDB shell (hireflow namespace)

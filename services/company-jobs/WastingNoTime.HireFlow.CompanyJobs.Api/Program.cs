@@ -3,6 +3,9 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpLogging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using OpenTelemetry.Exporter;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using WastingNoTime.HireFlow.CompanyJobs.Api.Endpoints;
 using WastingNoTime.HireFlow.CompanyJobs.Data;
 
@@ -23,6 +26,31 @@ builder.Services.AddHealthChecks()
         failureStatus: HealthStatus.Unhealthy,
         timeout: TimeSpan.FromSeconds(3));
 
+//todo: handle absence -> argmentnull exception
+// var otlpEndpoint =
+//     Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT") ??
+//     builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"] ??
+//     "http://jaeger-collector.observability.svc.cluster.local:4318";
+
+
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing =>
+    {
+        tracing
+            .AddAspNetCoreInstrumentation(o =>
+            {
+                // lets ignore noise
+                o.Filter = ctx =>
+                {
+                    var p = ctx.Request.Path.Value ?? "";
+                    return p != "/healthz" && p != "/ready";
+                };
+            })
+            .AddHttpClientInstrumentation()
+            .AddSqlClientInstrumentation()
+            .AddEntityFrameworkCoreInstrumentation()
+            .AddOtlpExporter();
+    });
 
 builder.Services.AddDbContext<CompanyJobsDbContext>(opt =>
     opt.UseSqlServer(dbConnectionString, sql =>
@@ -33,7 +61,7 @@ builder.Services.AddDbContext<CompanyJobsDbContext>(opt =>
             errorNumbersToAdd: null);
 
         sql.CommandTimeout(30);
-        
+
         sql.MigrationsHistoryTable("__EFMigrationsHistory", "companyjobs");
     }));
 
@@ -45,17 +73,9 @@ builder.Services.ConfigureHttpJsonOptions(opt =>
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-builder.Services.AddHttpLogging(logging =>
-{
-    logging.LoggingFields = HttpLoggingFields.All;
-    logging.RequestBodyLogLimit = 4096;
-    logging.ResponseBodyLogLimit = 4096;
-});
-
 
 var app = builder.Build();
 
-app.UseHttpLogging();
 
 if (app.Environment.IsDevelopment())
 {

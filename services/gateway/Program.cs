@@ -1,34 +1,53 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpLogging;
+using OpenTelemetry.Exporter;
 using Yarp.ReverseProxy;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddOpenApi();
-
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => HealthCheckResult.Healthy());
+
+//todo: handle absence -> argmentnull exception
+// var otlpEndpoint =
+//     Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT") ??
+//     builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"] ??
+//     "http://jaeger-collector.observability.svc.cluster.local:4318";
+
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing =>
+    {
+        tracing
+            .AddAspNetCoreInstrumentation(o =>
+            {
+                // lets ignore noise
+                o.Filter = ctx =>
+                {
+                    var p = ctx.Request.Path.Value ?? "";
+                    return p != "/healthz" && p != "/ready";
+                };
+            })
+            .AddHttpClientInstrumentation()
+            .AddOtlpExporter();
+    });
 
 builder.Services
     .AddReverseProxy()
     .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"));
 
-builder.Services.AddHttpLogging(logging =>
-{
-    logging.LoggingFields = HttpLoggingFields.All;
-    logging.RequestBodyLogLimit = 4096;
-    logging.ResponseBodyLogLimit = 4096;
-});
-
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-app.UseHttpLogging();
 
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.UseSwagger();
+    app.UseSwaggerUI();
 }
 
 
