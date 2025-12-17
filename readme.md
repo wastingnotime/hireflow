@@ -167,19 +167,14 @@ helm repo update
 helm install keda kedacore/keda -n keda
 ```
 
-#### update only worker
 
-build and deploy the services
+#### delete and reinstall services due selector change
+
 ```bash
-# build
-make build-notifications-worker
-
-# build update helm definitions (just in case)
-make helm-helm-update-notifications
-
-# deploy them on the cluster
-make helm-deploy-notifications
-
+make build
+make helm-update
+make helm-uninstall
+make helm-deploy
 ```
 
 verify if all the pods
@@ -211,6 +206,8 @@ kubectl port-forward -n observability svc/jaeger-query 16686:16686
 ```
 
 access on http://localhost:16686
+
+
 
 
 ### some tests could be done
@@ -299,6 +296,10 @@ kubectl -n hireflow scale deployments/mssql --replicas=1
 # view readness
 kubectl -n hireflow get pods -w
 ```
+
+
+
+
 
 ## behind the scenes (just recording some steps used during preparation)
 
