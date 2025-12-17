@@ -1,4 +1,7 @@
+using System.Diagnostics;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using Microsoft.Extensions.Logging;
 using MongoDB.Driver;
 using WastingNoTime.HireFlow.Applications.Data;
 using WastingNoTime.HireFlow.Applications.Messaging;
@@ -8,6 +11,8 @@ namespace WastingNoTime.HireFlow.Applications.Outbox;
 
 public sealed class ApplicationsOutboxDispatcher : BackgroundService
 {
+    private static readonly ActivitySource ActivitySource = new("hireflow/applications-outbox"); // NEW
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<ApplicationsOutboxDispatcher> _logger;
 
@@ -34,8 +39,16 @@ public sealed class ApplicationsOutboxDispatcher : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Applications Outbox dispatcher started. owner={Owner} poll={Poll}s batch={Batch} maxRetries={Max}",
-            _lockOwner, _pollInterval.TotalSeconds, _batchSize, _maxRetries);
+        // NEW: scope for the worker lifetime
+        using var workerScope = _logger.BeginScope(new Dictionary<string, object?>
+        {
+            ["component"] = "applications-outbox",
+            ["outbox.owner"] = _lockOwner
+        });
+
+        _logger.LogInformation(
+            "Outbox dispatcher started. pollSeconds={PollSeconds} batchSize={BatchSize} maxRetries={MaxRetries}",
+            _pollInterval.TotalSeconds, _batchSize, _maxRetries);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -62,7 +75,7 @@ public sealed class ApplicationsOutboxDispatcher : BackgroundService
             }
         }
 
-        _logger.LogInformation("Applications Outbox dispatcher stopping.");
+        _logger.LogInformation("Outbox dispatcher stopping.");
     }
 
     private async Task DispatchLoopAsync(CancellationToken ct)
@@ -77,29 +90,71 @@ public sealed class ApplicationsOutboxDispatcher : BackgroundService
         {
             ct.ThrowIfCancellationRequested();
 
-            // claim ONE message at a time (atomic).
             var msg = await ClaimNextMessageAsync(db.OutboxMessages, ct);
-            if (msg is null)
+            if (msg is null) break;
+
+            // NEW: correlation id per message (use outbox id)
+            var correlationId = msg.Id;
+
+            // NEW: parse payload once so we can log identifiers even on failures
+            SendEmailPayload? payload = null;
+            if (msg.Type == "SendEmail.InterviewScheduled")
             {
-                break; // no work
+                try
+                {
+                    payload = JsonSerializer.Deserialize<SendEmailPayload>(msg.PayloadJson);
+                }
+                catch
+                {
+                    // we'll let DispatchMessageAsync throw the "invalid JSON" error;
+                    // scope below still has outbox.id/type.
+                }
             }
+
+            // NEW: per-message structured scope
+            using var msgScope = _logger.BeginScope(new Dictionary<string, object?>
+            {
+                ["correlation_id"] = correlationId,
+                ["outbox.id"] = msg.Id,
+                ["outbox.type"] = msg.Type,
+                ["outbox.retry_count"] = msg.RetryCount,
+                ["applicationId"] = payload?.ApplicationId,
+                ["interviewId"] = payload?.InterviewId,
+                ["jobId"] = payload?.JobId
+            });
+
+            // NEW: span per dispatch attempt (shows in Jaeger)
+            using var activity = ActivitySource.StartActivity(
+                "outbox.dispatch",
+                ActivityKind.Internal);
+
+            activity?.SetTag("outbox.id", msg.Id);
+            activity?.SetTag("outbox.type", msg.Type);
+            activity?.SetTag("outbox.retry_count", msg.RetryCount);
+            if (payload?.ApplicationId is not null) activity?.SetTag("applicationId", payload.ApplicationId);
+            if (payload?.InterviewId is not null) activity?.SetTag("interviewId", payload.InterviewId);
+            activity?.SetTag("jobId", payload?.JobId);
 
             try
             {
+                _logger.LogInformation("Outbox dispatching message.");
+
                 await DispatchMessageAsync(msg, bus, ct);
                 await MarkProcessedAsync(db.OutboxMessages, msg.Id, ct);
                 processed++;
 
-                _logger.LogInformation("Outbox processed: id={Id} type={Type} retries={Retries}",
-                    msg.Id, msg.Type, msg.RetryCount);
+                _logger.LogInformation("Outbox processed.");
+                activity?.SetStatus(ActivityStatusCode.Ok);
             }
             catch (Exception ex)
             {
                 await MarkFailedOrRetryAsync(db.OutboxMessages, msg, ex, ct);
 
                 _logger.LogWarning(ex,
-                    "Outbox send failed: id={Id} type={Type} attempt={Attempt}/{Max}",
-                    msg.Id, msg.Type, msg.RetryCount + 1, _maxRetries);
+                    "Outbox send failed. attempt={Attempt}/{MaxRetries}",
+                    msg.RetryCount + 1, _maxRetries);
+
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             }
         }
 
@@ -113,8 +168,6 @@ public sealed class ApplicationsOutboxDispatcher : BackgroundService
     {
         var now = DateTime.UtcNow;
 
-        // todo: eligible -> Pending and due, or (optional) stuck Processing older than N minutes.
-        // for demo, we only do Pending due.
         var filter =
             Builders<OutboxMessage>.Filter.And(
                 Builders<OutboxMessage>.Filter.Eq(x => x.Status, "Pending"),
@@ -130,7 +183,6 @@ public sealed class ApplicationsOutboxDispatcher : BackgroundService
                 .Set(x => x.ProcessingStartedAtUtc, now)
                 .Set(x => x.LockedBy, _lockOwner);
 
-        // sort by oldest first
         var opts = new FindOneAndUpdateOptions<OutboxMessage>
         {
             Sort = Builders<OutboxMessage>.Sort.Ascending(x => x.OccurredAtUtc),
@@ -142,13 +194,32 @@ public sealed class ApplicationsOutboxDispatcher : BackgroundService
 
     private async Task DispatchMessageAsync(OutboxMessage msg, INotificationsCommandBus bus, CancellationToken ct)
     {
-        // keep it explicit and strict: unknown types are permanent failures.
         switch (msg.Type)
         {
             case "SendEmail.InterviewScheduled":
             {
+                _logger.LogWarning("Outbox raw payload json type={Type} json={Json}", msg.Type, msg.PayloadJson);
+                
                 var payload = JsonSerializer.Deserialize<SendEmailPayload>(msg.PayloadJson)
                               ?? throw new InvalidOperationException("Outbox payload is invalid JSON.");
+                
+                _logger.LogInformation("Decoded payload ApplicationId={ApplicationId} InterviewId={InterviewId} JobId={JobId}",
+                    payload.ApplicationId, payload.InterviewId, payload.JobId);
+
+                
+                _logger.LogInformation("Outbox payload json: {Json}", msg.PayloadJson);
+                
+                if (string.IsNullOrWhiteSpace(payload.ApplicationId))
+                    throw new InvalidOperationException("Outbox payload missing ApplicationId.");
+                if (string.IsNullOrWhiteSpace(payload.InterviewId))
+                    throw new InvalidOperationException("Outbox payload missing InterviewId.");
+                if (payload.JobId <= 0)
+                    throw new InvalidOperationException("Outbox payload missing/invalid JobId.");
+                
+                _logger.LogInformation(
+                    "Publishing SendEmail applicationId={ApplicationId} interviewId={InterviewId} jobId={JobId}",
+                    payload.ApplicationId, payload.InterviewId, payload.JobId);
+
 
                 await bus.PublishSendEmailAsync(
                     to: payload.To,
@@ -159,7 +230,7 @@ public sealed class ApplicationsOutboxDispatcher : BackgroundService
                     jobId: payload.JobId,
                     ct: ct);
 
-                break;
+                return;
             }
 
             default:
@@ -202,21 +273,19 @@ public sealed class ApplicationsOutboxDispatcher : BackgroundService
             .Set(x => x.Status, shouldFailPermanently ? "Failed" : "Pending")
             .Set(x => x.RetryCount, nextRetryCount)
             .Set(x => x.LastError, Truncate(ex.Message, 900))
-            .Set(x => x.NextAttemptAtUtc, nextAttemptAt);
+            .Set(x => x.NextAttemptAtUtc, nextAttemptAt)
+            .Set(x => x.LockedBy, _lockOwner);
 
         await outbox.UpdateOneAsync(filter, update, cancellationToken: ct);
 
         if (shouldFailPermanently)
         {
-            _logger.LogError(ex, "Outbox permanently failed: id={Id} type={Type} retries={Retries}",
-                msg.Id, msg.Type, nextRetryCount);
+            _logger.LogError(ex, "Outbox permanently failed. retries={Retries}", nextRetryCount);
         }
     }
 
     private static bool IsPermanentError(OutboxMessage msg, Exception ex)
     {
-        // for demo: unknown type is permanent; JSON invalid is permanent.
-        // everything else we treat as transient (RabbitMQ down, network, etc).
         if (ex is InvalidOperationException && ex.Message.Contains("Unknown outbox message type", StringComparison.OrdinalIgnoreCase))
             return true;
 
@@ -226,18 +295,13 @@ public sealed class ApplicationsOutboxDispatcher : BackgroundService
         return false;
     }
 
-    private static TimeSpan ComputeBackoff(int retryCount)
+    private static TimeSpan ComputeBackoff(int retryCount) => retryCount switch
     {
-        // demo-friendly backoff:
-        // 1 -> 1s, 2 -> 3s, 3 -> 10s, then 30s...
-        return retryCount switch
-        {
-            1 => TimeSpan.FromSeconds(1),
-            2 => TimeSpan.FromSeconds(3),
-            3 => TimeSpan.FromSeconds(10),
-            _ => TimeSpan.FromSeconds(30)
-        };
-    }
+        1 => TimeSpan.FromSeconds(1),
+        2 => TimeSpan.FromSeconds(3),
+        3 => TimeSpan.FromSeconds(10),
+        _ => TimeSpan.FromSeconds(30)
+    };
 
     private static int GetInt(IConfiguration config, string key, int fallback)
     {
@@ -250,12 +314,26 @@ public sealed class ApplicationsOutboxDispatcher : BackgroundService
 
     private sealed class SendEmailPayload
     {
+        [JsonPropertyName("type")]
         public string Type { get; set; } = "SendEmail";
+
+        [JsonPropertyName("to")]
         public string To { get; set; } = default!;
+
+        [JsonPropertyName("subject")]
         public string Subject { get; set; } = default!;
+
+        [JsonPropertyName("body")]
         public string Body { get; set; } = default!;
+
+        [JsonPropertyName("applicationId")]
         public string ApplicationId { get; set; } = default!;
+
+        [JsonPropertyName("interviewId")]
         public string InterviewId { get; set; } = default!;
+
+        [JsonPropertyName("jobId")]
         public long JobId { get; set; }
     }
+
 }

@@ -1,5 +1,8 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using OpenTelemetry;
+using OpenTelemetry.Context.Propagation;
 using RabbitMQ.Client;
 
 namespace WastingNoTime.HireFlow.Applications.Messaging;
@@ -64,6 +67,8 @@ public sealed class RabbitMqNotificationsCommandBus : INotificationsCommandBus
             arguments: mainQueueArgs);
     }
 
+    private static readonly TextMapPropagator Propagator = Propagators.DefaultTextMapPropagator;
+
     public Task PublishSendEmailAsync(
         string to,
         string subject,
@@ -89,6 +94,13 @@ public sealed class RabbitMqNotificationsCommandBus : INotificationsCommandBus
 
         var props = _channel.CreateBasicProperties();
         props.DeliveryMode = 2; // persistent
+        props.Headers ??= new Dictionary<string, object>();
+        props.MessageId = $"send-email:{applicationId}:{interviewId}:{jobId}";
+        props.CorrelationId = applicationId;
+
+        Propagator.Inject(new PropagationContext(Activity.Current?.Context ?? default, Baggage.Current),
+            props.Headers,
+            static (headers, key, value) => headers[key] = value);
 
         _channel.BasicPublish(
             exchange: "",                 // default exchange

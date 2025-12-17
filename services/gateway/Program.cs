@@ -41,8 +41,11 @@ builder.Services
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+builder.Services.AddTransient<TraceLoggingMiddleware>();
+
 var app = builder.Build();
 
+app.UseMiddleware<TraceLoggingMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {
