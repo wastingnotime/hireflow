@@ -34,12 +34,6 @@ builder.Services.AddHealthChecks()
     .AddCheck<MongoHealthCheck>("mongo")
     .AddCheck<RabbitMqHealthCheck>("rabbitmq");
 
-//todo: handle absence -> argmentnull exception
-// var otlpEndpoint =
-//     Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT") ??
-//     builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"] ??
-//     "http://jaeger-collector.observability.svc.cluster.local:4318";
-
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing =>
     {

@@ -136,12 +136,6 @@ func logWithTraceBase(ctx context.Context, b LogBase, format string, args ...any
 	log.Printf(prefix+" "+format, args...)
 }
 
-// todo: temp
-func logWithTrace(ctx context.Context, format string, args ...any) {
-
-	log.Printf(format, args...)
-}
-
 type MsgIDs struct {
 	MessageID     string
 	CorrelationID string
@@ -378,10 +372,6 @@ func processDeliveryWithRetry(
 		_ = m.Nack(false, false) // dlq
 		return
 	}
-
-	//todo:temp
-	logWithTrace(ctx, "decoded cmd applicationId=%q interviewId=%q jobId=%d type=%q",
-		cmd.ApplicationID, cmd.InterviewID, cmd.JobID, cmd.Type)
 
 	ids := extractIDs(m, cmd.ApplicationID)
 
