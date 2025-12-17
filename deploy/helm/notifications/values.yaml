@@ -3,7 +3,7 @@ image:
   tag: local
   pullPolicy: IfNotPresent
 
-replicaCount: 1   # initial, KEDA will override via HPA
+replicaCount: 0
 
 keda:
   enabled: true
@@ -37,5 +37,13 @@ env:
 secretRefName: "hireflow-connections"
 
 resources:
-  requests: { cpu: 50m, memory: 64Mi }
-  limits:   { cpu: 500m, memory: 256Mi }
+  requests: { cpu: 10m, memory: 64Mi }
+  limits:   { cpu: 200m, memory: 128Mi }
+
+lifecycle:
+  preStop:
+    exec:
+      command: ["/bin/sh", "-c", "sleep 5"]
+
+
+terminationGracePeriodSeconds: 30

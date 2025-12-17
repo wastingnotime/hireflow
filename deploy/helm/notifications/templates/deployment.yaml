@@ -8,24 +8,33 @@ spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "hf.labels" . | nindent 6 }}
+      {{- include "hf.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
         {{- include "hf.labels" . | nindent 8 }}
     spec:
-      terminationGracePeriodSeconds: 30
+      {{- if .Values.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- end }}
+
       containers:
-      - name: {{ include "hf.name" . }}
+      - name: app
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
         imagePullPolicy: {{ .Values.image.pullPolicy }}
+
+        {{- if .Values.lifecycle }}
+        lifecycle:
+          {{- toYaml .Values.lifecycle | nindent 10 }}
+        {{- end }}
+
         envFrom:
           - secretRef:
               name: {{ .Values.secretRefName }}
         env:
           {{- range $k, $v := .Values.env }}
           - name: {{ $k }}
-            value: "{{ $v }}"
+            value: {{ $v | quote }}
           {{- end }}
           - name: RABBITMQ_CONNECTION_STRING
             valueFrom:
@@ -44,5 +53,6 @@ spec:
             valueFrom:
               fieldRef:
                 fieldPath: spec.nodeName
+
         resources:
           {{- toYaml .Values.resources | nindent 10 }}

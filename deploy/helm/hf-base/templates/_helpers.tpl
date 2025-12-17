@@ -1,3 +1,8 @@
+{{- define "hf.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "hf.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end -}}
+
 {{- define "hf.labels" -}}
 app.kubernetes.io/name: {{ include "hf.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
