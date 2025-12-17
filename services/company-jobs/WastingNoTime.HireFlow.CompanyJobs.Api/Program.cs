@@ -23,13 +23,6 @@ builder.Services.AddHealthChecks()
         failureStatus: HealthStatus.Unhealthy,
         timeout: TimeSpan.FromSeconds(3));
 
-//todo: handle absence -> argmentnull exception
-// var otlpEndpoint =
-//     Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT") ??
-//     builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"] ??
-//     "http://jaeger-collector.observability.svc.cluster.local:4318";
-
-
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing =>
     {

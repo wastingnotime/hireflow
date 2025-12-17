@@ -198,28 +198,22 @@ public sealed class ApplicationsOutboxDispatcher : BackgroundService
         {
             case "SendEmail.InterviewScheduled":
             {
-                _logger.LogWarning("Outbox raw payload json type={Type} json={Json}", msg.Type, msg.PayloadJson);
-                
                 var payload = JsonSerializer.Deserialize<SendEmailPayload>(msg.PayloadJson)
                               ?? throw new InvalidOperationException("Outbox payload is invalid JSON.");
-                
+
                 _logger.LogInformation("Decoded payload ApplicationId={ApplicationId} InterviewId={InterviewId} JobId={JobId}",
                     payload.ApplicationId, payload.InterviewId, payload.JobId);
 
-                
-                _logger.LogInformation("Outbox payload json: {Json}", msg.PayloadJson);
-                
                 if (string.IsNullOrWhiteSpace(payload.ApplicationId))
                     throw new InvalidOperationException("Outbox payload missing ApplicationId.");
                 if (string.IsNullOrWhiteSpace(payload.InterviewId))
                     throw new InvalidOperationException("Outbox payload missing InterviewId.");
                 if (payload.JobId <= 0)
                     throw new InvalidOperationException("Outbox payload missing/invalid JobId.");
-                
+
                 _logger.LogInformation(
                     "Publishing SendEmail applicationId={ApplicationId} interviewId={InterviewId} jobId={JobId}",
                     payload.ApplicationId, payload.InterviewId, payload.JobId);
-
 
                 await bus.PublishSendEmailAsync(
                     to: payload.To,
