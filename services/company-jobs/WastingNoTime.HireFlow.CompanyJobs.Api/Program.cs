@@ -1,10 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.AspNetCore.HttpLogging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using OpenTelemetry.Exporter;
-using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using WastingNoTime.HireFlow.CompanyJobs.Api.Endpoints;
 using WastingNoTime.HireFlow.CompanyJobs.Data;
@@ -43,11 +40,10 @@ builder.Services.AddOpenTelemetry()
                 o.Filter = ctx =>
                 {
                     var p = ctx.Request.Path.Value ?? "";
-                    return p != "/healthz" && p != "/ready";
+                    return !p.StartsWith("/healthz") && !p.StartsWith("/ready");
                 };
             })
             .AddHttpClientInstrumentation()
-            .AddSqlClientInstrumentation()
             .AddEntityFrameworkCoreInstrumentation()
             .AddOtlpExporter();
     });
@@ -73,6 +69,8 @@ builder.Services.ConfigureHttpJsonOptions(opt =>
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+builder.Services.AddTransient<TraceLoggingMiddleware>();
+
 
 var app = builder.Build();
 
@@ -82,6 +80,8 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
+app.UseMiddleware<TraceLoggingMiddleware>();
 
 app.UseRouting();
 
