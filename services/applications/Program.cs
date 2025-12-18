@@ -45,6 +45,7 @@ builder.Services.AddOpenTelemetry()
     .WithTracing(tracing =>
     {
         tracing
+            .AddSource("hireflow/applications-outbox")
             .AddAspNetCoreInstrumentation(o =>
             {
                 // lets ignore noise
@@ -53,8 +54,9 @@ builder.Services.AddOpenTelemetry()
                     var p = ctx.Request.Path.Value ?? "";
                     return p != "/healthz" && p != "/ready";
                 };
+                o.RecordException = true;
             })
-            .AddHttpClientInstrumentation()
+            .AddHttpClientInstrumentation(o => o.RecordException = true)
             .AddOtlpExporter();
     });
 
@@ -86,7 +88,6 @@ app.MapGet("/applications/trace-ping", () =>
     span.SetAttribute("demo", true);
     return Results.Ok(new { ok = true });
 });
-
 
 
 // POST /applications : candidate applies with resume

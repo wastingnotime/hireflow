@@ -35,8 +35,9 @@ builder.Services.AddOpenTelemetry()
                     var p = ctx.Request.Path.Value ?? "";
                     return !p.StartsWith("/healthz") && !p.StartsWith("/ready");
                 };
+                o.RecordException = true;
             })
-            .AddHttpClientInstrumentation()
+            .AddHttpClientInstrumentation(o=>  o.RecordException = true)
             .AddEntityFrameworkCoreInstrumentation()
             .AddOtlpExporter();
     });

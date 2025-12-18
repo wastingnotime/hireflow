@@ -1,7 +1,5 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using OpenTelemetry.Exporter;
-using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -22,8 +20,9 @@ builder.Services.AddOpenTelemetry()
                     var p = ctx.Request.Path.Value ?? "";
                     return p != "/healthz" && p != "/ready";
                 };
+                o.RecordException = true;
             })
-            .AddHttpClientInstrumentation()
+            .AddHttpClientInstrumentation(o=>o.RecordException = true)
             .AddOtlpExporter();
     });
 

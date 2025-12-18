@@ -1,9 +1,6 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.AspNetCore.HttpLogging;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using MongoDB.Driver;
-using OpenTelemetry.Exporter;
-using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using RabbitMQ.Client;
 using WastingNoTime.HireFlow.Candidates.Api.HealthCheck;
@@ -46,8 +43,9 @@ builder.Services.AddOpenTelemetry()
                     var p = ctx.Request.Path.Value ?? "";
                     return p != "/healthz" && p != "/ready";
                 };
+                o.RecordException = true;
             })
-            .AddHttpClientInstrumentation()
+            .AddHttpClientInstrumentation(o => o.RecordException = true)
             .AddOtlpExporter();
     });
 
