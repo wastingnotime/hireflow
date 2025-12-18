@@ -100,7 +100,7 @@ public sealed class RabbitMqNotificationsCommandBus : INotificationsCommandBus
 
         Propagator.Inject(new PropagationContext(Activity.Current?.Context ?? default, Baggage.Current),
             props.Headers,
-            static (headers, key, value) => headers[key] = value);
+            static (headers, key, value) => headers[key] = Encoding.UTF8.GetBytes(value));
 
         _channel.BasicPublish(
             exchange: "",                 // default exchange
