@@ -124,16 +124,15 @@ public sealed class ApplicationsOutboxDispatcher : BackgroundService
             });
 
             // NEW: span per dispatch attempt (shows in Jaeger)
-            using var activity = ActivitySource.StartActivity(
-                "outbox.dispatch",
-                ActivityKind.Internal);
+            using var activity = ActivitySource.StartActivity("outbox.dispatch", ActivityKind.Internal);
 
             activity?.SetTag("outbox.id", msg.Id);
             activity?.SetTag("outbox.type", msg.Type);
             activity?.SetTag("outbox.retry_count", msg.RetryCount);
-            if (payload?.ApplicationId is not null) activity?.SetTag("applicationId", payload.ApplicationId);
-            if (payload?.InterviewId is not null) activity?.SetTag("interviewId", payload.InterviewId);
+            activity?.SetTag("applicationId", payload?.ApplicationId);
+            activity?.SetTag("interviewId", payload?.InterviewId);
             activity?.SetTag("jobId", payload?.JobId);
+
 
             try
             {
@@ -215,6 +214,19 @@ public sealed class ApplicationsOutboxDispatcher : BackgroundService
                     "Publishing SendEmail applicationId={ApplicationId} interviewId={InterviewId} jobId={JobId}",
                     payload.ApplicationId, payload.InterviewId, payload.JobId);
 
+                _logger.LogInformation("Publishing with trace_id={TraceId}", Activity.Current?.TraceId.ToString());
+
+                
+                using var publishActivity = ActivitySource.StartActivity(
+                    "notifications.commands publish",
+                    ActivityKind.Producer);
+
+                publishActivity?.SetTag("messaging.system", "rabbitmq");
+                publishActivity?.SetTag("messaging.destination", "notifications.commands");
+                publishActivity?.SetTag("messaging.operation", "publish");
+                publishActivity?.SetTag("messaging.message_id", msg.Id);
+                publishActivity?.SetTag("messaging.correlation_id", payload.ApplicationId);
+                
                 await bus.PublishSendEmailAsync(
                     to: payload.To,
                     subject: payload.Subject,

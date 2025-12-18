@@ -329,6 +329,11 @@ func processDeliveryWithRetry(
 	if m.Headers == nil {
 		m.Headers = amqp091.Table{}
 	}
+
+	tp, _ := headerString(m.Headers, "traceparent")
+	ts, _ := headerString(m.Headers, "tracestate")
+	log.Printf("debug headers traceparent=%q tracestate=%q", tp, ts)
+
 	parentCtx := otel.GetTextMapPropagator().Extract(rootCtx, amqpHeadersCarrier(m.Headers))
 
 	ctx, span := tracer.Start(parentCtx, "notifications.handle",
@@ -418,11 +423,11 @@ func processDeliveryWithRetry(
 
 		err := handleSendEmailCommand(attemptCtx, workerID, podName, &cmd, attempt)
 		if err == nil {
-			logWithTraceBase(ctx, base, "NOTIFY SendEmail  (attempt %d/%d)", attempt, maxAttempts)
+			logWithTraceBase(attemptCtx, base, "NOTIFY SendEmail  (attempt %d/%d)", attempt, maxAttempts)
 			if ackErr := m.Ack(false); ackErr != nil {
 				attemptSpan.RecordError(ackErr)
 				attemptSpan.SetStatus(codes.Error, "ack failed")
-				logWithTraceBase(ctx, base, "ack failed (attempt %d/%d) err=%v", attempt, maxAttempts, ackErr)
+				logWithTraceBase(attemptCtx, base, "ack failed (attempt %d/%d) err=%v", attempt, maxAttempts, ackErr)
 			} else {
 				attemptSpan.SetStatus(codes.Ok, "ok")
 			}
@@ -435,7 +440,7 @@ func processDeliveryWithRetry(
 		attemptSpan.SetStatus(codes.Error, "handler failed")
 		attemptSpan.End()
 
-		logWithTraceBase(ctx, base, "handler failed (attempt %d/%d) err=%v", attempt, maxAttempts, err)
+		logWithTraceBase(attemptCtx, base, "handler failed (attempt %d/%d) err=%v", attempt, maxAttempts, err)
 
 		if attempt < maxAttempts {
 			sleep := backoff[attempt-1]
