@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using OpenTelemetry.Trace;
 using WastingNoTime.HireFlow.CompanyJobs.Api.Endpoints;
+using WastingNoTime.HireFlow.CompanyJobs.Api.Middlewares;
 using WastingNoTime.HireFlow.CompanyJobs.Data;
 
 var builder = WebApplication.CreateBuilder(args);

@@ -4,6 +4,7 @@ using MongoDB.Driver;
 using OpenTelemetry.Trace;
 using RabbitMQ.Client;
 using WastingNoTime.HireFlow.Candidates.Api.HealthCheck;
+using WastingNoTime.Hireflow.Candidates.Api.Middlewares;
 
 var builder = WebApplication.CreateBuilder(args);
 

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using OpenTelemetry.Trace;
 using Polly.CircuitBreaker;
 using Polly.Timeout;
+using WastingNoTime.HireFlow.Gateway.Middlewares;
 using Yarp.ReverseProxy.Forwarder;
 
 var builder = WebApplication.CreateBuilder(args);

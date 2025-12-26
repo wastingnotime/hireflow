@@ -124,16 +124,26 @@ type LogBase struct {
 func logWithTraceBase(ctx context.Context, b LogBase, format string, args ...any) {
 	sc := trace.SpanContextFromContext(ctx)
 
-	prefix := fmt.Sprintf(
-		"worker_id=%s pod=%s queue=%s message_id=%s correlation_id=%s application_id=%s",
-		b.WorkerID, b.PodName, b.QueueName, b.MessageID, b.CorrelationID, b.ApplicationID,
-	)
-
-	if sc.IsValid() {
-		prefix = fmt.Sprintf("[trace_id=%s span_id=%s] %s", sc.TraceID().String(), sc.SpanID().String(), prefix)
+	line := LogLine{
+		Timestamp:     time.Now().UTC().Format(time.RFC3339Nano),
+		Level:         "info",
+		Service:       getenv("OTEL_SERVICE_NAME", "notifications-worker"),
+		Env:           getenv("ENVIRONMENT", ""),
+		Message:       fmt.Sprintf(format, args...),
+		CorrelationID: b.CorrelationID,
+		WorkerID:      b.WorkerID,
+		Pod:           b.PodName,
+		Queue:         b.QueueName,
+		MessageID:     b.MessageID,
+		ApplicationID: b.ApplicationID,
 	}
 
-	log.Printf(prefix+" "+format, args...)
+	if sc.IsValid() {
+		line.TraceID = sc.TraceID().String()
+		line.SpanID = sc.SpanID().String()
+	}
+
+	logJSON(line)
 }
 
 type MsgIDs struct {
@@ -477,4 +487,28 @@ func getenv(k, def string) string {
 		return def
 	}
 	return v
+}
+
+type LogLine struct {
+	Timestamp     string `json:"timestamp"`
+	Level         string `json:"level"`
+	Service       string `json:"service"`
+	Env           string `json:"env"`
+	Message       string `json:"message"`
+	TraceID       string `json:"trace_id,omitempty"`
+	SpanID        string `json:"span_id,omitempty"`
+	CorrelationID string `json:"correlation_id,omitempty"`
+	EventType     string `json:"event_type,omitempty"`
+
+	WorkerID      string `json:"worker_id,omitempty"`
+	Pod           string `json:"pod,omitempty"`
+	Queue         string `json:"queue,omitempty"`
+	MessageID     string `json:"message_id,omitempty"`
+	ApplicationID string `json:"application_id,omitempty"`
+	Error         string `json:"error,omitempty"`
+}
+
+func logJSON(l LogLine) {
+	b, _ := json.Marshal(l)
+	log.Print(string(b))
 }
