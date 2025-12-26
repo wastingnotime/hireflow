@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using WastingNoTime.HireFlow.CompanyJobs.Api.Endpoints;
 using WastingNoTime.HireFlow.CompanyJobs.Api.Middlewares;
@@ -41,6 +42,12 @@ builder.Services.AddOpenTelemetry()
             .AddHttpClientInstrumentation(o=>  o.RecordException = true)
             .AddEntityFrameworkCoreInstrumentation()
             .AddOtlpExporter();
+    })
+    .WithMetrics(m =>
+    {
+        m
+            .AddAspNetCoreInstrumentation()
+            .AddPrometheusExporter();
     });
 
 builder.Services.AddDbContext<CompanyJobsDbContext>(opt =>
@@ -94,5 +101,7 @@ app.MapHealthChecks("/ready", new HealthCheckOptions
 
 
 app.MapCompanyJobsEndpoints();
+
+app.MapPrometheusScrapingEndpoint("/metrics");
 
 app.Run();

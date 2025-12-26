@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using WastingNoTime.HireFlow.Identity.Middlewares;
 
@@ -24,6 +25,12 @@ builder.Services.AddOpenTelemetry()
             })
             .AddHttpClientInstrumentation(o=>o.RecordException = true)
             .AddOtlpExporter();
+    })
+    .WithMetrics(m =>
+    {
+        m
+            .AddAspNetCoreInstrumentation()
+            .AddPrometheusExporter();
     });
 
 builder.Services.AddEndpointsApiExplorer();
@@ -83,6 +90,8 @@ if (app.Environment.ApplicationName?.Contains("identity", StringComparison.Ordin
         return Results.Ok(new { access_token = handler.WriteToken(token) });
     });
 }
+
+app.MapPrometheusScrapingEndpoint("/metrics");
 
 app.Run();
 

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using WastingNoTime.HireFlow.Search.Middlewares;
 
@@ -25,6 +26,12 @@ builder.Services.AddOpenTelemetry()
             })
             .AddHttpClientInstrumentation(o=>o.RecordException = true)
             .AddOtlpExporter();
+    })
+    .WithMetrics(m =>
+    {
+        m
+            .AddAspNetCoreInstrumentation()
+            .AddPrometheusExporter();
     });
 
 builder.Services.AddEndpointsApiExplorer();
@@ -54,5 +61,6 @@ app.MapHealthChecks("/ready", new HealthCheckOptions
     Predicate = _ => true
 });
 
+app.MapPrometheusScrapingEndpoint("/metrics");
 
 app.Run();
