@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using OpenTelemetry.Trace;
+using WastingNoTime.HireFlow.Search.Middlewares;
 
 var builder = WebApplication.CreateBuilder(args);
 

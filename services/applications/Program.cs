@@ -8,6 +8,7 @@ using WastingNoTime.HireFlow.Applications.Contracts;
 using WastingNoTime.HireFlow.Applications.Data;
 using WastingNoTime.HireFlow.Applications.HealthCheck;
 using WastingNoTime.HireFlow.Applications.Messaging;
+using WastingNoTime.HireFlow.Applications.Middlewares;
 using WastingNoTime.HireFlow.Applications.Models;
 using WastingNoTime.HireFlow.Applications.Outbox;
 
@@ -28,12 +29,8 @@ var rabbitConnectionString =
     builder.Configuration["RABBITMQ_CONNECTION_STRING"] ??
     throw new InvalidOperationException("Missing RabbitMQ connection string for Applications");
 
-builder.Services.AddSingleton(_ => new ConnectionFactory
-{
-    Uri = new Uri(rabbitConnectionString)
-});
-builder.Services.AddSingleton<INotificationsCommandBus>(_ =>
-    new RabbitMqNotificationsCommandBus(rabbitConnectionString));
+builder.Services.AddSingleton(_ => new ConnectionFactory{    Uri = new Uri(rabbitConnectionString)});
+builder.Services.AddSingleton<INotificationsCommandBus>(_ =>    new RabbitMqNotificationsCommandBus(rabbitConnectionString));
 builder.Services.AddHostedService<ApplicationsOutboxDispatcher>();
 
 builder.Services.AddHealthChecks()
