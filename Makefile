@@ -453,10 +453,13 @@ rabbitmq-send-broken-message:
 # -------------------------------------------
 # forwards
 # -------------------------------------------
-.PHONY: forward-jaeger forward-applications
+.PHONY: forward-jaeger forward-applications forward-notifications
 
 forward-jaeger:
 	kubectl port-forward -n observability svc/jaeger-query 16686:16686
 
 forward-applications:
 	kubectl -n hireflow port-forward svc/applications 18080:80
+
+forward-notifications:
+	kubectl -n hireflow port-forward deploy/notifications 18080:9090

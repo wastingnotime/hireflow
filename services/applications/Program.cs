@@ -61,6 +61,7 @@ builder.Services.AddOpenTelemetry()
     {
         m
             .AddAspNetCoreInstrumentation()
+            .AddMeter("hireflow.messaging")
             .AddPrometheusExporter();
     });
 
