@@ -341,7 +341,7 @@ helm-status-notifications:
 JOB_ID ?= 1
 COMPANY_ID ?= 1
 
-.PHONY: api-healthz \
+.PHONY: api-healthz api-ready api-metrics api-metrics-forward \
 	api-jobs-create api-jobs-publish api-jobs-get \
 	api-companies-create api-companies-get api-companies-get-all \
 	api-recruiters-get-all api-recruiters-create \
@@ -352,6 +352,12 @@ api-healthz:
 
 api-ready:
 	curl -s $(GATEWAY_URL)/ready && echo
+
+api-metrics:
+	curl -s $(GATEWAY_URL)/metrics && echo
+
+api-metrics-forward:
+	curl -s http://localhost:18080/metrics
 
 # # some domain calls you already have from M1
 # curl -sS http://hireflow.local/companies
@@ -441,3 +447,16 @@ rabbitmq-send-broken-message:
 
 ## TODO: diagnose
 # helm template company-jobs deploy/helm/company-jobs -n hireflow
+
+
+
+# -------------------------------------------
+# forwards
+# -------------------------------------------
+.PHONY: forward-jaeger forward-applications
+
+forward-jaeger:
+	kubectl port-forward -n observability svc/jaeger-query 16686:16686
+
+forward-applications:
+	kubectl -n hireflow port-forward svc/applications 18080:80

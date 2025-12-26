@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using MongoDB.Driver;
+using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using RabbitMQ.Client;
 using WastingNoTime.HireFlow.Applications.Contracts;
@@ -55,6 +56,12 @@ builder.Services.AddOpenTelemetry()
             })
             .AddHttpClientInstrumentation(o => o.RecordException = true)
             .AddOtlpExporter();
+    })
+    .WithMetrics(m =>
+    {
+        m
+            .AddAspNetCoreInstrumentation()
+            .AddPrometheusExporter();
     });
 
 builder.Services.AddEndpointsApiExplorer();
@@ -506,5 +513,7 @@ app.MapHealthChecks("/ready", new HealthCheckOptions
 {
     Predicate = _ => true
 });
+
+app.MapPrometheusScrapingEndpoint("/metrics");
 
 app.Run();

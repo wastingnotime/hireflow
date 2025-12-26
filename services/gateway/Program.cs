@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using Polly.CircuitBreaker;
 using Polly.Timeout;
@@ -28,6 +29,12 @@ builder.Services.AddOpenTelemetry()
             })
             .AddHttpClientInstrumentation(o => { o.RecordException = true; })
             .AddOtlpExporter();
+    })
+    .WithMetrics(m =>
+    {
+        m
+            .AddAspNetCoreInstrumentation()
+            .AddPrometheusExporter();
     });
 
 builder.Services.AddSingleton<IForwarderHttpClientFactory, ResilientForwarderHttpClientFactory>();
@@ -107,5 +114,6 @@ app.MapReverseProxy(proxyPipeline =>
     });
 });
 
+app.MapPrometheusScrapingEndpoint("/metrics");
 
 app.Run();
