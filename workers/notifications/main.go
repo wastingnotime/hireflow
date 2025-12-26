@@ -7,11 +7,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rabbitmq/amqp091-go"
 
 	"go.opentelemetry.io/otel"
@@ -24,6 +27,25 @@ import (
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	semconv "go.opentelemetry.io/otel/semconv/v1.27.0"
+)
+
+var (
+	consumed = prometheus.NewCounterVec(
+		prometheus.CounterOpts{Name: "hireflow_messaging_consumed_total", Help: "Consumed messages"},
+		[]string{"queue", "type"},
+	)
+	failed = prometheus.NewCounterVec(
+		prometheus.CounterOpts{Name: "hireflow_messaging_failed_total", Help: "Handler failures"},
+		[]string{"queue", "type"},
+	)
+	dlq = prometheus.NewCounterVec(
+		prometheus.CounterOpts{Name: "hireflow_messaging_dlq_total", Help: "Messages sent to DLQ"},
+		[]string{"queue", "type"},
+	)
+	requeued = prometheus.NewCounterVec(
+		prometheus.CounterOpts{Name: "hireflow_messaging_requeued_total", Help: "Messages requeued"},
+		[]string{"queue", "type"},
+	)
 )
 
 type SendEmailCommand struct {
@@ -221,6 +243,14 @@ func main() {
 	rabbitURL := getenv("RABBITMQ_CONNECTION_STRING", "amqp://guest:guest@localhost:5672/")
 	queueName := getenv("WORKER_QUEUE", "notifications.commands")
 
+	// metrics - init
+	prometheus.MustRegister(consumed, failed, dlq, requeued)
+
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		_ = http.ListenAndServe(":9090", nil) // or env var
+	}()
+
 	// Root context cancelled on SIGTERM/SIGINT (KEDA scale-down / rollout)
 	rootCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
@@ -385,6 +415,7 @@ func processDeliveryWithRetry(
 		}
 		logWithTraceBase(ctx, base, "invalid json; dlq err=%v body=%q", err, string(m.Body))
 		_ = m.Nack(false, false) // dlq
+		dlq.WithLabelValues(queueName, cmd.Type).Inc()
 		return
 	}
 
@@ -419,6 +450,7 @@ func processDeliveryWithRetry(
 		case <-rootCtx.Done():
 			span.SetStatus(codes.Error, "terminated before attempt; requeue")
 			_ = m.Nack(false, true)
+			requeued.WithLabelValues(queueName, cmd.Type).Inc()
 			return
 		default:
 		}
@@ -438,11 +470,13 @@ func processDeliveryWithRetry(
 				attemptSpan.RecordError(ackErr)
 				attemptSpan.SetStatus(codes.Error, "ack failed")
 				logWithTraceBase(attemptCtx, base, "ack failed (attempt %d/%d) err=%v", attempt, maxAttempts, ackErr)
+				failed.WithLabelValues(queueName, cmd.Type).Inc()
 			} else {
 				attemptSpan.SetStatus(codes.Ok, "ok")
 			}
 			attemptSpan.End()
 			span.SetStatus(codes.Ok, "processed")
+			consumed.WithLabelValues(queueName, cmd.Type).Inc()
 			return
 		}
 
@@ -460,6 +494,7 @@ func processDeliveryWithRetry(
 			case <-rootCtx.Done():
 				span.SetStatus(codes.Error, "terminated during backoff; requeue")
 				_ = m.Nack(false, true)
+				requeued.WithLabelValues(queueName, cmd.Type).Inc()
 				return
 			}
 			continue
@@ -468,6 +503,7 @@ func processDeliveryWithRetry(
 		span.SetStatus(codes.Error, "max attempts reached; dlq")
 		logWithTraceBase(ctx, base, "max attempts reached; dlq (attempt %d/%d) err=%v", attempt, maxAttempts, err)
 		_ = m.Nack(false, false)
+		dlq.WithLabelValues(queueName, cmd.Type).Inc()
 		return
 	}
 }

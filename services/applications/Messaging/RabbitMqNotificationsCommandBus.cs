@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Text;
 using System.Text.Json;
 using OpenTelemetry;
@@ -9,6 +10,12 @@ namespace WastingNoTime.HireFlow.Applications.Messaging;
 
 public sealed class RabbitMqNotificationsCommandBus : INotificationsCommandBus
 {
+    private static readonly Meter Meter = new("hireflow.messaging", "1.0.0");
+    private static readonly Counter<long> Published =
+        Meter.CreateCounter<long>("hireflow.messaging.published", description: "Messages published to broker");
+    private static readonly Counter<long> PublishFailed =
+        Meter.CreateCounter<long>("hireflow.messaging.publish_failed", description: "Publish failures");
+
     private readonly IConnection _connection;
     private readonly IModel _channel;
 
@@ -102,11 +109,27 @@ public sealed class RabbitMqNotificationsCommandBus : INotificationsCommandBus
             props.Headers,
             static (headers, key, value) => headers[key] = Encoding.UTF8.GetBytes(value));
 
-        _channel.BasicPublish(
-            exchange: "",                 // default exchange
-            routingKey: MainQueue,        // notifications.commands
-            basicProperties: props,
-            body: bytes);
+        try
+        {
+            _channel.BasicPublish(
+                exchange: "",                 // default exchange
+                routingKey: MainQueue,        // notifications.commands
+                basicProperties: props,
+                body: bytes);
+
+            Published.Add(1,
+                    new KeyValuePair<string, object?>("queue", MainQueue),
+                    new KeyValuePair<string, object?>("message_type", "SendEmail"));
+
+        }
+        catch
+        {
+            PublishFailed.Add(1,
+                new KeyValuePair<string, object?>("queue", MainQueue),
+                new KeyValuePair<string, object?>("message_type", "SendEmail"));
+            throw;
+        }
+
 
         return Task.CompletedTask;
     }
