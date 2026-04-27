@@ -1,5 +1,9 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.IdentityModel.Tokens;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using WastingNoTime.HireFlow.Identity.Middlewares;
@@ -61,38 +65,68 @@ app.MapHealthChecks("/ready", new HealthCheckOptions
 });
 
 
-if (app.Environment.ApplicationName?.Contains("identity", StringComparison.OrdinalIgnoreCase) == true)
+app.MapPost("/token", (TokenRequest req, IConfiguration cfg, ILoggerFactory lf) =>
 {
-    app.MapPost("/token/dev", async (HttpRequest req, IConfiguration cfg) =>
-    {
-        using var sr = new StreamReader(req.Body);
-        var body = await sr.ReadToEndAsync();
-        var dto = System.Text.Json.JsonSerializer.Deserialize<DevTokenReq>(body)!;
+    var log = lf.CreateLogger("identity.token");
 
-        var key = cfg["JwtSigningKey"] ?? "dev_hmac_super_secret_change_me";
-        var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
-        var credentials = new Microsoft.IdentityModel.Tokens.SigningCredentials(
-            new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(key)),
-            Microsoft.IdentityModel.Tokens.SecurityAlgorithms.HmacSha256
-        );
-        var token = new System.IdentityModel.Tokens.Jwt.JwtSecurityToken(
-            issuer: "hireflow-dev",
-            audience: "hireflow-dev",
-            claims: new[]
-            {
-                new System.Security.Claims.Claim("email", dto.email),
-                new System.Security.Claims.Claim("tenant_id", dto.tenantId ?? Guid.Empty.ToString()),
-                new System.Security.Claims.Claim("role", dto.role ?? "Recruiter")
-            },
-            expires: DateTime.UtcNow.AddHours(24),
-            signingCredentials: credentials
-        );
-        return Results.Ok(new { access_token = handler.WriteToken(token) });
+    // TODO: replace this with DB-backed client store later
+    if (req.ClientId != "recruiter-demo" || req.ClientSecret != "demo")
+    {
+        log.LogWarning("token issuance failed client_id={client_id} reason=invalid_credentials", req.ClientId);
+        return Results.Unauthorized();
+    }
+
+    var issuer = cfg["JWT_ISSUER"] ?? "hireflow-identity";
+    var audience = cfg["JWT_AUDIENCE"] ?? "hireflow-api";
+    var expiresMinutes = int.TryParse(cfg["JWT_EXPIRES_MINUTES"], out var m) ? m : 60;
+
+    var signingKey = cfg["JWT_SIGNING_KEY"];
+    if (string.IsNullOrWhiteSpace(signingKey))
+    {
+        log.LogError("missing JWT_SIGNING_KEY");
+        return Results.Problem("Server misconfigured", statusCode: 500);
+    }
+
+    var now = DateTimeOffset.UtcNow;
+    var expires = now.AddMinutes(expiresMinutes);
+
+    var claims = new List<Claim>
+    {
+        new(JwtRegisteredClaimNames.Sub, req.ClientId),
+        new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("N")),
+        new(JwtRegisteredClaimNames.Iat, now.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
+
+        // authz
+        new(ClaimTypes.Role, "recruiter"),
+        new("scope", "companies:read companies:write jobs:read jobs:write applications:read applications:write")
+    };
+
+    var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey));
+    var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+    var token = new JwtSecurityToken(
+        issuer: issuer,
+        audience: audience,
+        claims: claims,
+        notBefore: now.UtcDateTime,
+        expires: expires.UtcDateTime,
+        signingCredentials: creds);
+
+    var jwt = new JwtSecurityTokenHandler().WriteToken(token);
+
+    log.LogInformation("token issued client_id={client_id} exp={exp}", req.ClientId, expires);
+
+    return Results.Ok(new
+    {
+        access_token = jwt,
+        token_type = "Bearer",
+        expires_in = (int)(expires - now).TotalSeconds
     });
-}
+});
+
 
 app.MapPrometheusScrapingEndpoint("/metrics");
 
 app.Run();
 
-record DevTokenReq(string email, string? tenantId, string? role);
+record TokenRequest(string ClientId, string ClientSecret);

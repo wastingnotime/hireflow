@@ -10,7 +10,7 @@ public static class CompanyJobsEndpoints
 {
     public static IEndpointRouteBuilder MapCompanyJobsEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/");
+        var group = app.MapGroup("/").RequireAuthorization("recruiter");
 
         // ----- Companies -----
 
@@ -27,7 +27,8 @@ public static class CompanyJobsEndpoints
 
             var response = new CompanyResponse(company.Id, company.Name, company.Domain);
             return Results.Created($"/companies/{company.Id}", response);
-        });
+        })
+        .RequireAuthorization("companies:write");
 
         group.MapGet("/companies", async (CompanyJobsDbContext db) =>
         {
@@ -37,7 +38,8 @@ public static class CompanyJobsEndpoints
                 .ToListAsync();
 
             return Results.Ok(companies);
-        });
+        })
+        .RequireAuthorization("companies:read");
 
         group.MapGet("/companies/{id:long}", async (long id, CompanyJobsDbContext db) =>
         {
@@ -47,7 +49,8 @@ public static class CompanyJobsEndpoints
                 .FirstOrDefaultAsync();
 
             return company is null ? Results.NotFound() : Results.Ok(company);
-        });
+        })
+        .RequireAuthorization("companies:read");
 
         // ----- Recruiters -----
 
@@ -70,7 +73,8 @@ public static class CompanyJobsEndpoints
 
             var response = new RecruiterResponse(recruiter.Id, recruiter.CompanyId, recruiter.Name, recruiter.Email);
             return Results.Created($"/recruiters/{recruiter.Id}", response);
-        });
+        })
+        .RequireAuthorization("companies:write");
 
         group.MapGet("/companies/{companyId:long}/recruiters",
             async (long companyId, CompanyJobsDbContext db) =>
@@ -82,7 +86,8 @@ public static class CompanyJobsEndpoints
                 .ToListAsync();
 
             return Results.Ok(recruiters);
-        });
+        })
+        .RequireAuthorization("companies:read");
 
         group.MapGet("/recruiters/{id:long}", async (long id, CompanyJobsDbContext db) =>
         {
@@ -92,7 +97,8 @@ public static class CompanyJobsEndpoints
                 .FirstOrDefaultAsync();
 
             return recruiter is null ? Results.NotFound() : Results.Ok(recruiter);
-        });
+        })
+        .RequireAuthorization("companies:read");
 
         // ----- Jobs -----
 
@@ -132,7 +138,8 @@ public static class CompanyJobsEndpoints
 
             var response = new JobResponse(job.Id, job.CompanyId, job.Title, job.Status, job.RecruiterId);
             return Results.Created($"/jobs/{job.Id}", response);
-        });
+        })
+        .RequireAuthorization("jobs:write");
 
         group.MapGet("/jobs/{id:long}", async (long id, CompanyJobsDbContext db) =>
         {
@@ -142,7 +149,8 @@ public static class CompanyJobsEndpoints
                 .FirstOrDefaultAsync();
 
             return job is null ? Results.NotFound() : Results.Ok(job);
-        });
+        })
+        .RequireAuthorization("jobs:read");
 
         group.MapPatch("/jobs/{id:long}/publish", async (long id, CompanyJobsDbContext db) =>
         {
@@ -158,7 +166,8 @@ public static class CompanyJobsEndpoints
 
             var response = new JobResponse(job.Id, job.CompanyId, job.Title, job.Status, job.RecruiterId);
             return Results.Ok(response);
-        });
+        })
+        .RequireAuthorization("jobs:write");
 
         return app;
     }

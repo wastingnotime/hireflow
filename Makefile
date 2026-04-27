@@ -345,7 +345,8 @@ COMPANY_ID ?= 1
 	api-jobs-create api-jobs-publish api-jobs-get \
 	api-companies-create api-companies-get api-companies-get-all \
 	api-recruiters-get-all api-recruiters-create \
-	api-notifications-spike
+	api-notifications-spike \
+	api-identity-token-forward
 
 api-healthz:
 	curl -s $(GATEWAY_URL)/healthz && echo
@@ -406,6 +407,11 @@ api-notifications-spike:
 api-applications-trace:
 	curl $(GATEWAY_URL)/applications/trace-ping
 
+api-identity-token-forward:
+	curl -s -X POST http://localhost:18081/token \
+	-H 'Content-Type: application/json' \
+	-d '{"clientId":"recruiter-demo","clientSecret":"demo"}' | jq -r .access_token
+
 
 # -------------------------------------------
 # MongoDB shell (hireflow namespace)
@@ -463,3 +469,6 @@ forward-applications:
 
 forward-notifications:
 	kubectl -n hireflow port-forward deploy/notifications 18080:9090
+
+forward-identity:
+	kubectl -n hireflow port-forward svc/identity 18081:80
