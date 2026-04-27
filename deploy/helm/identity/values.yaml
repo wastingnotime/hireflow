@@ -24,7 +24,10 @@ env:
   OTEL_METRICS_EXPORTER: "none"
   OTEL_LOGS_EXPORTER: "none"
   OTEL_LOG_LEVEL: "debug"
-
+  JWT_ISSUER: hireflow-identity
+  JWT_AUDIENCE: hireflow-api
+  JWT_EXPIRES_MINUTES: 60
+  
 secretRefName: "hireflow-connections"
 
 ingress:

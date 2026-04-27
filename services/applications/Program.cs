@@ -1,6 +1,9 @@
+using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.IdentityModel.Tokens;
 using MongoDB.Driver;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
@@ -14,6 +17,48 @@ using WastingNoTime.HireFlow.Applications.Models;
 using WastingNoTime.HireFlow.Applications.Outbox;
 
 var builder = WebApplication.CreateBuilder(args);
+
+var issuer = builder.Configuration["JWT_ISSUER"] ?? "hireflow-identity";
+var audience = builder.Configuration["JWT_AUDIENCE"] ?? "hireflow-api";
+var signingKey = builder.Configuration["JWT_SIGNING_KEY"];
+
+if (string.IsNullOrWhiteSpace(signingKey) || Encoding.UTF8.GetByteCount(signingKey) < 32)
+    throw new InvalidOperationException("JWT_SIGNING_KEY must be at least 32 bytes for HS256.");
+
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(o =>
+    {
+        o.RequireHttpsMetadata = false; // ok for minikube/dev
+        o.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = issuer,
+
+            ValidateAudience = true,
+            ValidAudience = audience,
+
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
+
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromSeconds(30),
+        };
+    });
+
+builder.Services.AddAuthorization(options =>
+{
+    // Simple role policy example
+    options.AddPolicy("recruiter", p => p.RequireRole("recruiter"));
+
+    // Scope policies (space-separated "scope" claim)
+    options.AddPolicy("applications:read", p => p.Requirements.Add(new ScopeRequirement("applications:read")));
+    options.AddPolicy("applications:write", p => p.Requirements.Add(new ScopeRequirement("applications:write")));
+});
+
+builder.Services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationHandler, ScopeHandler>();
+
 
 var mongoConnectionString =
     Environment.GetEnvironmentVariable("APPLICATIONS_MONGO_CONNECTION_STRING") ??
@@ -72,6 +117,9 @@ builder.Services.AddTransient<TraceLoggingMiddleware>();
 
 var app = builder.Build();
 
+app.UseAuthentication();
+app.UseAuthorization();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -84,19 +132,23 @@ app.UseRouting();
 
 // ---------- Endpoints ----------
 
+var root = app.MapGroup("/applications")
+    .RequireAuthorization("recruiter");
+
 // kept only for validation purposes
 var tracer = TracerProvider.Default.GetTracer("applications.manual");
 
-app.MapGet("/applications/trace-ping", () =>
+root.MapGet("/trace-ping", () =>
 {
     using var span = tracer.StartActiveSpan("applications.trace-ping");
     span.SetAttribute("demo", true);
     return Results.Ok(new { ok = true });
-});
+})
+.RequireAuthorization("applications:read");
 
 
 // POST /applications : candidate applies with resume
-app.MapPost("/applications", async (
+root.MapPost("", async (
     HttpRequest request,
     IWebHostEnvironment env,
     ApplicationsDb db,
@@ -169,10 +221,11 @@ app.MapPost("/applications", async (
     );
 
     return Results.Created($"/applications/{appDoc.Id}", response);
-});
+})
+.RequireAuthorization("applications:write");
 
 // GET /applications/{id} : simple fetch for debugging
-app.MapGet("/applications/{id}", async (string id, ApplicationsDb db, CancellationToken ct) =>
+root.MapGet("/{id}", async (string id, ApplicationsDb db, CancellationToken ct) =>
 {
     var filter = Builders<Application>.Filter.Eq(x => x.Id, id);
     var appDoc = await db.Applications.Find(filter).FirstOrDefaultAsync(ct);
@@ -194,10 +247,11 @@ app.MapGet("/applications/{id}", async (string id, ApplicationsDb db, Cancellati
     );
 
     return Results.Ok(response);
-});
+})
+.RequireAuthorization("applications:read");
 
 // POST /applications/{id}/screen : simple screening step (M1)
-app.MapPost("/applications/{id}/screen", async (
+root.MapPost("/{id}/screen", async (
     string id,
     ApplicationsDb db,
     CancellationToken ct) =>
@@ -250,11 +304,12 @@ app.MapPost("/applications/{id}/screen", async (
     );
 
     return Results.Ok(response);
-});
+})
+.RequireAuthorization("applications:write");
 
 
 // POST /applications/{id}/interviews : schedule interview + move application to "interview"
-app.MapPost("/applications/{id}/interviews", async (
+root.MapPost("/{id}/interviews", async (
     string id,
     ScheduleInterviewRequest req,
     ApplicationsDb db,
@@ -370,10 +425,11 @@ app.MapPost("/applications/{id}/interviews", async (
     );
 
     return Results.Created($"/interviews/{interview.Id}", response);
-});
+})
+.RequireAuthorization("applications:write");
 
 // GET /applications/{id}/interviews : list interviews for this application
-app.MapGet("/applications/{id}/interviews", async (
+root.MapGet("/{id}/interviews", async (
     string id,
     ApplicationsDb db,
     CancellationToken ct) =>
@@ -401,7 +457,8 @@ app.MapGet("/applications/{id}/interviews", async (
         .ToList();
 
     return Results.Ok(response);
-});
+})
+.RequireAuthorization("applications:read");
 
 // GET /interviews/{id} : get a single interview
 app.MapGet("/interviews/{id}", async (
@@ -507,14 +564,42 @@ app.MapGet("/outbox/summary", async (ApplicationsDb db, CancellationToken ct) =>
 app.MapHealthChecks("/healthz", new HealthCheckOptions
 {
     Predicate = _ => false // don't run registered checks, just 200 if app is alive
-});
+})
+.AllowAnonymous();
 
 // Readiness – can run all checks (for now it's same as self)
 app.MapHealthChecks("/ready", new HealthCheckOptions
 {
     Predicate = _ => true
-});
+})
+.AllowAnonymous();
 
-app.MapPrometheusScrapingEndpoint("/metrics");
+app.MapPrometheusScrapingEndpoint("/metrics")
+    .AllowAnonymous();
 
 app.Run();
+
+
+
+
+
+// ---- Scope authorization (supports "scope": "a b c") ----
+public sealed record ScopeRequirement(string Scope) : Microsoft.AspNetCore.Authorization.IAuthorizationRequirement;
+
+public sealed class ScopeHandler : Microsoft.AspNetCore.Authorization.AuthorizationHandler<ScopeRequirement>
+{
+    protected override Task HandleRequirementAsync(
+        Microsoft.AspNetCore.Authorization.AuthorizationHandlerContext context,
+        ScopeRequirement requirement)
+    {
+        var scopeClaim = context.User.FindFirst("scope")?.Value;
+        if (string.IsNullOrWhiteSpace(scopeClaim))
+            return Task.CompletedTask;
+
+        var scopes = scopeClaim.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (scopes.Contains(requirement.Scope))
+            context.Succeed(requirement);
+
+        return Task.CompletedTask;
+    }
+}
