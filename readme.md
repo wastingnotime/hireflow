@@ -1,5 +1,44 @@
 # HireFlow
 
+## status
+
+Status: Complete through M2 — Scale & Resiliency, with partial M3 observability work
+
+HireFlow is preserved as a finished architecture experiment. It is not a production ATS.
+The completed learning arc is:
+
+- M0 — bootable skeleton
+- M1 — happy path
+- M2 — scale and resiliency
+
+Milestone 3 was planned as observability and security depth. It was partially explored, mainly on observability:
+
+- OpenTelemetry tracing across gateway and services
+- trace/correlation propagation through RabbitMQ messages
+- structured JSON logging
+- basic HTTP metrics
+- messaging metrics for publish/consume/DLQ behavior
+
+The remaining M3 security and hardening work is intentionally not pursued further.
+The project already achieved its intended demonstration purpose at M2, and the partial M3 work is preserved as additional evidence rather than a new completion target.
+
+## what HireFlow demonstrates
+
+- service decomposition
+- Kubernetes local orchestration
+- Helm-based deployment
+- RabbitMQ messaging
+- outbox pattern
+- retry / DLQ behavior
+- KEDA scaling
+- resiliency tests
+- distributed system boundaries
+- partial observability depth
+
+## final architectural conclusion
+
+HireFlow proves that I can design and operate a complex Kubernetes-based distributed system through M2, with partial M3 observability depth.
+It also clarifies that, for my own systems, I prefer simpler operational models such as Docker Swarm, Nomad, or managed Kubernetes when Kubernetes is truly justified.
 
 ## overview
 
@@ -106,11 +145,12 @@ That is an MVP but to allow it to be easy understandable and manageable we split
     * CI/CD: build → test → Helm deploy → smoke tests.
 * Milestone 1 — “Happy path”
     * Create company & recruiter → publish job → candidate applies (resume upload) → screening score → move to interview → schedule slot → send email.
-* Milestone 2 — Scale & resiliency **<---- "WE ARE HERE"**
+* Milestone 2 — Scale & resiliency
     * KEDA scaling on queue depth; circuit breaker on Search; outbox pattern for Applications → Messaging; retries + DLQ viewer.
-* Milestone 3 — Observability & security
+* Milestone 3 — Observability & security (partial)
     * Trace a request across gateway→apps→workers in Jaeger.
     * RBAC unit tests; PII encryption at rest; GDPR “export/delete me” job.
+    * Observability work was partially completed; security depth remains intentionally incomplete.
 
 
 ## starting guide (for Linux)
@@ -125,11 +165,12 @@ Suggestion for the braves: if you think that makes sense, after taking note of y
 sequence of releases:
 M0 - [bootable-skeleton](https://github.com/wastingnotime/hireflow/tree/v0.1.0-m0-bootable-skeleton)
 M1 - [happy-path](https://github.com/wastingnotime/hireflow/tree/v0.2.0-m1-happy-path)
+M2 - [scale-and-resiliency](https://github.com/wastingnotime/hireflow/releases/tag/v0.3.0-m2-scale-and-resiliency)
 if you are just starting, start from M0
 because all doc is just complementar
 
 
-### milestone 2  - scale & resiliency
+### milestone 2  - scale & resiliency, plus partial milestone 3 observability
 
 ### pre-requirements
 
@@ -177,6 +218,22 @@ make helm-uninstall
 make helm-deploy
 ```
 
+
+
+#### update secrets (passwords, connection-strings, etc)
+
+update secrects
+```bash
+kubectl -n hireflow create secret generic hireflow-connections \
+  --from-literal=SqlServer='Server=mssql.hireflow.svc.cluster.local,1433;Database=hireflow;User ID=sa;Password=P@ssw0rd12345!;TrustServerCertificate=True' \
+  --from-literal=RabbitMQ='amqp://hireflow:hireflowpass@mq-rabbitmq.hireflow.svc.cluster.local:5672/' \
+  --from-literal=Mongo='mongodb://root:hireflowmongo@mongo-mongodb-0.mongo-mongodb-headless.hireflow.svc.cluster.local:27017/?replicaSet=rs0' \
+  --from-literal=JwtSigningKey='dev_hmac_super_secret_change_me__32bytes_min' \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+
+
 verify if all the pods
 ```bash
 kubectl -n hireflow get pods
@@ -186,7 +243,6 @@ test
 ```bash
 make test-happy-path
 ```
-
 
 #### opentelemetry
 
@@ -206,8 +262,6 @@ kubectl port-forward -n observability svc/jaeger-query 16686:16686
 ```
 
 access on http://localhost:16686
-
-
 
 
 ### some tests could be done
@@ -295,6 +349,18 @@ kubectl -n hireflow get pods -w
 kubectl -n hireflow scale deployments/mssql --replicas=1
 # view readness
 kubectl -n hireflow get pods -w
+```
+
+
+#### test identity /token
+
+```bash
+# forward port to access service directly
+make forward-identity
+
+# call /token
+make api-identity-token-forward
+
 ```
 
 
