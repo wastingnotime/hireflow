@@ -431,3 +431,7 @@ rabbit maintenance
 kubectl -n hireflow exec -it mq-rabbitmq-0 -- \
   rabbitmqctl delete_queue notifications.commands
 ```
+
+## license
+
+This project is licensed under the Mozilla Public License 2.0. See [LICENSE](LICENSE).
